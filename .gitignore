@@ -1,0 +1,11 @@
+os
+nets
+__pycache__
+deepg
+elina/elina_zonotope/elina_test_zonotope
+elina/zonoml/elina_test_zonoml
+elina3
+bechmark
+gmp-6.2.1
+mpfr-4.1.0
+deepcegar_venv

@@ -1,0 +1,27 @@
+{
+    //"python.pythonPath":"/usr/local/bin/python3.6",
+    "python.pythonPath": "deepcegar_venv/bin/python",
+    "python.envFile": "${workspaceFolder}/.env", 
+    "files.associations": {
+        "memory": "cpp",
+        "*.tcc": "c",
+        "deque": "c",
+        "list": "c",
+        "string": "c",
+        "unordered_map": "c",
+        "vector": "c",
+        "array": "c",
+        "bitset": "c",
+        "initializer_list": "c",
+        "utility": "c",
+        "random": "cpp"
+    },
+    "python.autoComplete.extraPaths": [
+        "ELINA/python_interface"
+      ],
+    "python.languageServer": "Pylance",
+    "python.analysis.extraPaths": [
+        "ELINA/python_interface"
+    ]
+    
+}

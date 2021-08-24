@@ -1,0 +1,3 @@
+[submodule "ELINA"]
+	path = ELINA
+	url = https://github.com/eth-sri/ELINA
