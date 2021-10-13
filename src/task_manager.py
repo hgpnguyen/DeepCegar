@@ -9,6 +9,7 @@ class TaskManager:
     def __init__(self):
         self.tasks = None
         self.task_sizes = None
+        self.limit = 0
        
        
     def init(self, pid, nr_layers):
@@ -23,9 +24,9 @@ class TaskManager:
         self.largest_size = 0
         
         
-    def add_task(self, start_ir, element, nn, parent_hid, partition_no):
+    def add_task(self, start_ir, element, nn, parent_hid, partition_no, neurons):
         self.cid += 1
-        self.last_task = Task.create(self.pid, self.cid, start_ir, element, nn, parent_hid, partition_no)
+        self.last_task = Task.create(self.pid, self.cid, start_ir, element, nn, parent_hid, partition_no, neurons)
         self.tasks[start_ir].append(self.last_task)
         self.task_sizes[start_ir] += 1
         self.total_size += 1
@@ -68,10 +69,19 @@ class TaskManager:
     def get_largest_size(self):
         return self.largest_size
     
+    def checkLimit(self, layer_idx):
+        return self.task_sizes[layer_idx] < self.limit
+    
+    def checkLimit(self, layer_idx, k):
+        return self.task_sizes[layer_idx] < 2**k-1
+    
     def destroy(self, man):
         for i in self.tasks:
             for j in i:
                 j.destroy(man)
+
+    def setLimit(self, k):
+        self.limit = 2**k-1
     
     def __str__(self):
         return '[Problem:' + self.pid + '] layer_tasks:' + str(self.task_sizes) + ' total_size:' + str(self.total_size)

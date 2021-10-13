@@ -469,7 +469,8 @@ class AbstractDomainAttack:
         if self.attack_mode == 'generator':
             np_matrix = np.array(self.matrix)
             np_bias = np.array(self.bias)
-        nr_samples = 4
+        nr_samples = 5
+        x_len = np_bias.shape[0]
         # nr_samples = len(self.lb)*4
         for i in range(nr_samples):
             gene = np.random.uniform(self.lb, self.ub, self.lb.shape)
@@ -477,7 +478,7 @@ class AbstractDomainAttack:
                 x = np.add(np.matmul(np_matrix, np.reshape(gene, (-1, 1))), np_bias)
             label = np.argmax(x)
             if label != self.property.target:
-                return x, x, x[self.property.target][0] - x[label][0], 0.0, gene
+                return x, x, x[self.property.target][0] - x[label][0], [1.0]*x_len, gene
         return x, x, x[self.property.target][0], 0.0, gene
                 
                 

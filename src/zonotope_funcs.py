@@ -17,9 +17,10 @@ from fppoly import *
 from colors import *
 from ctypes.util import *
 from layers import *
+from poly import *
 
-debug_mode = False
-#debug_mode = True
+#debug_mode = False
+debug_mode = True
 
 libc = CDLL(find_library('c'))
 printf = libc.printf
@@ -296,7 +297,7 @@ def poly_split(man, element, ir_list, nn, k, split_dims, split_values=None, meet
     res = []
     lb, ub = poly_bound(man, element, nn.calc_layerno()-1)
     if meet_lincons_arr:
-        o1, pk_man = fpoly_to_poly(man, element, nn)
+        o1, pk_man = fpoly_to_poly(man, element, nn, 1)
 
         linexprs = create_k_lincons_array(k, [last_neuron+i for i in split_dims], split_values)
         lincons0_array = elina_lincons0_array_make(k)
@@ -363,35 +364,39 @@ def create_k_lincons_array(k, split_dims, split_values):
         elina_linexpr0_set_coeff_scalar_int(linexpr, split_dims[i], 1)
     return linexprs
 
-def fpoly_to_poly(man, element, nn):
+def fpoly_to_poly(man, element, nn, k=1):
     layer_idx = nn.calc_layerno()-1
     curr_neuron = len(nn.specLB[layer_idx])
-    if layer_idx - 1 != -1:
-        last_lb, last_ub = nn.specLB[layer_idx-1], nn.specUB[layer_idx-1]
+    if layer_idx - k != -1:
+        last_lb, last_ub = nn.specLB[layer_idx-k], nn.specUB[layer_idx-k]
     else:
         last_lb, last_ub = nn.in_LB, nn.in_UB
     last_neuron = len(last_lb)
 
     lincons0_array = elina_lincons0_array_make((curr_neuron + last_neuron)*2)
-    for i in range(curr_neuron):
-        ub_expr = to_sparseExpr(get_uexpr_for_output_neuron(man, element, i), True)
-        lb_expr = to_sparseExpr(get_lexpr_for_output_neuron(man, element, i), True)
-        addDimension(ub_expr, last_neuron+i, -1)
-        negLin(lb_expr)
-        addDimension(lb_expr, last_neuron+i, 1)
-        lincons0_array.p[i*2].constyp = ElinaConstyp.ELINA_CONS_SUPEQ
-        lincons0_array.p[i*2].linexpr0 = lb_expr
-        lincons0_array.p[i*2+1].constyp = ElinaConstyp.ELINA_CONS_SUPEQ
-        lincons0_array.p[i*2+1].linexpr0 = ub_expr
-
+    #lst_le, lst_ge = element_to_poly(man, element, layer_idx-k+1, layer_idx, (last_lb, last_ub), nn)
+    #num_dimension = lst_le[0].shape[0] - 1
     for i in range(last_neuron):
         lb_neuron = create_linexpr([1, -last_lb[i]], [i])
         ub_neuron = create_linexpr([-1, last_ub[i]], [i])
-        lincons0_array.p[(i+curr_neuron)*2].constyp = ElinaConstyp.ELINA_CONS_SUPEQ
-        lincons0_array.p[(i+curr_neuron)*2].linexpr0 = lb_neuron
-        lincons0_array.p[(i+curr_neuron)*2+1].constyp = ElinaConstyp.ELINA_CONS_SUPEQ
-        lincons0_array.p[(i+curr_neuron)*2+1].linexpr0 = ub_neuron
+        lincons0_array.p[i*2].constyp = ElinaConstyp.ELINA_CONS_SUPEQ
+        lincons0_array.p[i*2].linexpr0 = lb_neuron
+        lincons0_array.p[i*2+1].constyp = ElinaConstyp.ELINA_CONS_SUPEQ
+        lincons0_array.p[i*2+1].linexpr0 = ub_neuron
 
+    for i in range(curr_neuron):
+        ub_expr = to_sparseExpr(get_uexpr_for_output_neuron(man, element, i), True)
+        lb_expr = to_sparseExpr(get_lexpr_for_output_neuron(man, element, i), True)
+        #lb_expr = to_dense(lst_le[i])
+        #ub_expr = to_dense(lst_ge[i])
+        addDimension(ub_expr, last_neuron+i, -1)
+        negLin(lb_expr)
+        addDimension(lb_expr, last_neuron+i, 1)
+        lincons0_array.p[(i+last_neuron)*2].constyp = ElinaConstyp.ELINA_CONS_SUPEQ
+        lincons0_array.p[(i+last_neuron)*2].linexpr0 = lb_expr
+        lincons0_array.p[(i+last_neuron)*2+1].constyp = ElinaConstyp.ELINA_CONS_SUPEQ
+        lincons0_array.p[(i+last_neuron)*2+1].linexpr0 = ub_expr
+    
     pk_man = opt_pk_manager_alloc(False)
     top = elina_abstract0_top(pk_man,0,curr_neuron+last_neuron)
     o1 = elina_abstract0_meet_lincons_array(pk_man,False,top, lincons0_array)
@@ -452,6 +457,14 @@ def to_sparseExpr(linexpr, destroy = False):
         elina_linexpr0_free(linexpr)
     return linexpr0
 
+def to_dense(expr):
+    size = expr.shape[0]
+    linexpr0 = elina_linexpr0_alloc(ElinaLinexprDiscr.ELINA_LINEXPR_DENSE, size)
+    elina_linexpr0_set_cst_scalar_double(linexpr0, expr[-1])
+    for i in range(size-1):
+        elina_linexpr0_set_coeff_scalar_double(linexpr0, i, expr[i])
+    return linexpr0
+
 def interval_to_db(interval):
     up = c_double()
     elina_double_set_scalar(up, interval.contents.sup, MpfrRnd.MPFR_RNDU)
@@ -465,3 +478,57 @@ def coeff_to_db(coeff):
         elina_double_set_scalar(db, coeff.contents.val.scalar, MpfrRnd.MPFR_RNDNA)
         return db.value
     return interval_to_db(coeff.contents.val.interval)
+
+def expr_to_np(expr, length):
+    expr_np = np.zeros(length, dtype=np.float)
+    size = elina_linexpr0_size(expr)
+    cst = elina_coeff_alloc(ElinaCoeffDiscr.ELINA_COEFF_INTERVAL)
+    elina_linexpr0_get_cst(cst, expr)
+    expr_np[-1] = coeff_to_db(cst)
+
+    for i in range(size):
+        coeff = elina_coeff_alloc(ElinaCoeffDiscr.ELINA_COEFF_INTERVAL)
+        if expr.contents.discr == ElinaLinexprDiscr.ELINA_LINEXPR_DENSE:
+            dim = i
+        else:
+            dim = expr.contents.p.linterm[i].dim
+        elina_linexpr0_get_coeff(coeff, expr, dim)
+        expr_np[i] = coeff_to_db(coeff)
+
+    return expr_np
+
+def element_to_poly(man, element, start, end, input_bound, nn):
+    x0_poly = Poly()
+    lw, up = input_bound
+    no_neurons = len(lw)
+    x0_poly.lw, x0_poly.up = np.array(lw), np.array(up)
+    x0_poly.le = np.eye(no_neurons + 1)[:-1]
+    x0_poly.ge = np.eye(no_neurons + 1)[:-1]
+    lst_poly = [x0_poly]
+    last_lay_no_nerons = no_neurons
+    for idx in range(start, end+1):
+        no_neurons = get_num_neurons_in_layer(man, element, idx)
+        le, ge = [], []
+        idx_poly = Poly()
+        for i in range(no_neurons):
+            if idx == end:
+                uexpr = get_uexpr_for_output_neuron(man, element, i)
+                lexpr = get_lexpr_for_output_neuron(man, element, i)
+            else:
+                uexpr = get_output_uexpr_defined_over_previous_layers(man,element, i, idx)
+                lexpr = get_output_lexpr_defined_over_previous_layers(man,element, i, idx)
+            uexpr_np = expr_to_np(uexpr, last_lay_no_nerons+1)
+            lexpr_np = expr_to_np(lexpr, last_lay_no_nerons+1)
+            ge.append(uexpr_np)
+            le.append(lexpr_np)
+        idx_poly.ge = np.array(ge)
+        idx_poly.le = np.array(le)
+        idx_poly.lw = np.array(nn.specLB[idx])
+        idx_poly.up = np.array(nn.specUB[idx])
+        last_lay_no_nerons = no_neurons 
+        lst_poly.append(idx_poly)
+    
+    last_poly = lst_poly.pop()
+    list_ge, list_le = last_poly.back_substitute(lst_poly, True)
+
+    return list_ge, list_le

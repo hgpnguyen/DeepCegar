@@ -146,6 +146,7 @@ def add_row_to_file(filename, output_info):
         out.append(['Testcase', 'Verify result', 'time', 'Total number of task', 'Largest number of task'])
     out.append(output_info)
     with open(filename, 'a') as csvfile:
+        print("How", filename)
         writer = csv.writer(csvfile)
         writer.writerows(out)
 
@@ -261,7 +262,9 @@ def main(config):
     
     start = config.start
     # tf.InteractiveSession().as_default()
-    for i, test in enumerate(tests[start:100], start):
+    for i, test in enumerate(tests, start):
+        #if i not in list(range(start,100)):
+        #    continue 
         num_graphs.append(len(tf.Session().graph._nodes_by_name.keys()))
         #if i not in [80]:
         #    continue
@@ -357,7 +360,30 @@ def main(config):
     print('Total task born:', np.sum(np.array(output_infos)[:,-1]), 'Max task born:', np.max(np.array(output_infos)[:,-1]))
 
 
-
+def test():
+    mnist_relu_model = ['3_10', '3_20', '3_30', 
+                        '4_10', '4_20', '4_30',
+                        '5_10', '5_20',
+                        '3_40', '5_30',  '4_40', '5_40', '3_50', '4_50', '5_50'
+                        ]
+    #data_folder = '../benchmark/mnist_challenge/x_y/'
+    model_folder = '../benchmark/cegar/nnet/'
+    output_folder = config.output
+    config.start = 98
+    for m in mnist_relu_model[14:]:
+        model_name = 'mnist_tanh_' + m
+        config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
+        assert config.netname, 'a network has to be provided for analysis.'
+        if config.output:
+            eps = str(config.epsilon).split('.')
+            info = 'refine{}_k1_{}_{}'.format(config.domain, eps[0], eps[-1]) if config.use_abstract_attack else '{}_{}_{}'.format(config.domain, eps[0], eps[-1])
+            config.output = '{}/{}_{}.csv'.format(output_folder, model_name, info)
+        start = time.time()
+        main(config)
+        end = time.time()
+        tf.reset_default_graph()
+        config.start = 0
+        print("Total run time:", end-start, "seconds")
 
 
 if __name__ == "__main__":
@@ -393,27 +419,5 @@ if __name__ == "__main__":
         setattr(config, k, v)
     config.json = vars(args)
 
-
-    mnist_relu_model = ['3_10', '3_20', '3_30', 
-                        '4_10', '4_20', '4_30',
-                        '5_10', '5_20',
-                        '3_40', '5_30',  '4_40', '5_40', '3_50', '4_50', '5_50',
-                        '6_100', '9_200', '4_1024']
-    #data_folder = '../benchmark/mnist_challenge/x_y/'
-    model_folder = '../benchmark/cegar/nnet/'
-    output_folder = config.output
-    config.start = 77
-    for m in mnist_relu_model[14:15]:
-        model_name = 'mnist_relu_' + m
-        config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
-        assert config.netname, 'a network has to be provided for analysis.'
-        if config.output:
-            eps = str(config.epsilon).split('.')
-            info = 'refine{}_k1_{}_{}'.format(config.domain, eps[0], eps[-1]) if config.use_abstract_attack else '{}_{}_{}'.format(config.domain, eps[0], eps[-1])
-            config.output = '{}/{}_{}.csv'.format(output_folder, model_name, info)
-        start = time.time()
-        main(config)
-        end = time.time()
-        tf.reset_default_graph()
-        config.start = 0
-        print("Total run time:", end-start, "seconds")
+    main(config)
+    #test()

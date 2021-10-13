@@ -53,6 +53,8 @@ class Analyzer:
         self.nr_classes = self.ir_list[-1].output_length
         self.target_label = -2
         self.task_manager = TaskManager()
+        self.k = 1
+        self.task_manager.setLimit(self.k)
 
         if domain == 'deepzono':
             self.man = zonoml_manager_alloc()
@@ -136,7 +138,7 @@ class Analyzer:
         
         
         
-    def get_first_k_dimensions_to_split(self, attack_result, k, strategy, lb=None, ub=None, is_relu=False):
+    def get_first_k_dimensions_to_split(self, attack_result, k, strategy, neurons, lb=None, ub=None, is_relu=False):
         strategies = ['grad_and_scale', 'lb_similar_with_ub_first', 'grad_larger_first', 'input_ub_larger_first', 'input_lb_smaller_first', 'input_interval_larger_first', 'output_smaller_first', 'output_smaller_first_only_when_neg']
         assert strategy in strategies
         x = attack_result.x
@@ -151,7 +153,9 @@ class Analyzer:
                 print('!!lb=ub!!')
             zono_debug_info_print(self.man, None, '', lb, ub)
             all_indicies = [i for i in all_indicies if lb[i]<0 and ub[i]>0]
-            print(' **cross_0_indicies:', all_indicies, reset)
+        else:
+            all_indicies = [i for i in all_indicies if i not in neurons]
+        print(' **cross_0_indicies:', all_indicies, reset)
 
         if strategy == 'grad_and_scale':
             ranked_list = sorted(all_indicies, key=lambda s: abs(grad[s])*(ub[s]-lb[s]))
@@ -185,7 +189,7 @@ class Analyzer:
         
         
 
-    def refine_abstract_domain(self, attack_result, layer_no, element, parent_hid):
+    def refine_abstract_domain(self, attack_result, layer_no, element, parent_hid, neurons):
         if self.domain == "deepzono":
             nn = None
         else:
@@ -208,14 +212,13 @@ class Analyzer:
         x = attack_result.x
         x_grad = attack_result.grad
         refined_elements = []
-        
+        k = self.k
         if is_activate:
             if is_relu:
                 print('   |-refine [operation:Relu, action: i)0-splitting first, ii) s-splitting]') # grad:', x_grad[:10], '...')
                 # print('[RELU refine] (s-splitting) Can not refine the domain via splitting only one dimension due to no negative y coordinate.')
-                k = 1
                 # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'grad_larger_first', lb, ub, is_relu=True)
-                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'grad_and_scale', lb, ub, is_relu=True)
+                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'grad_and_scale', neurons, lb, ub, is_relu=True)
                 # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', lb, ub, is_relu=True)
                 # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', lb, ub)
                 # while len(split_dims) == 0:
@@ -231,27 +234,29 @@ class Analyzer:
                 split_values = [0.0]*k
                 # split_values = [x[i] for i in split_dims]
                 #refined_elements = zono_specified_split(self.man, element, k, split_dims, split_values)
-                refined_elements = abstract_split(self.man, self.domain, element, self.ir_list, nn, k, split_dims, split_values)
-                
-                print('      |-split the dim', split_dims, 'into', len(refined_elements), 'subtasks: ') # , end='')
-                for i, e in enumerate(refined_elements):
-                    if self.domain == "deeppoly":
-                        e, new_nn = e[0], e[1]
-                    else:
-                        new_nn = None
-                    self.task_manager.add_task(layer_no, e, new_nn, parent_hid, i)
-                    print(yellow, '         |->', i, ')', self.task_manager.last_task, reset, sep='', end=' ') 
-                    if debug_mode:
-                        debug_info_print(self.man, e, self.domain, layer_no-2, 'splitted', end='')
-                        print(' --dim', dim, ' bound:[', lb[dim], ',', ub[dim], ']  ', sep='', end='')
-                    print()
             else: # elif is_tanh or is_sigmoid:
                 print('   |-refine [operation:Tanh/Sigmoid, action: s-splitting].')
-                k = 2
-                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', lb, ub)
-                split_values = [x[i] for i in split_dims]
+                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', neurons, lb, ub)
+                if len(split_dims) == 0:
+                    return False
+                for dim in split_dims:
+                    neurons.add(dim)
+                split_values = [(lb[i] + ub[i])/2 for i in split_dims]
                 #refined_elements = zono_specified_split(self.man, element, k, split_dims, split_values)
-                refined_elements = abstract_split(self.man, self.domain, element, self.ir_list, nn, k, split_dims, split_values)
+            
+            refined_elements = abstract_split(self.man, self.domain, element, self.ir_list, nn, k, split_dims, split_values)    
+            print('      |-split the dim', split_dims, 'into', len(refined_elements), 'subtasks: ') # , end='')
+            for i, e in enumerate(refined_elements):
+                if self.domain == "deeppoly":
+                    e, new_nn = e[0], e[1]
+                else:
+                    new_nn = None
+                self.task_manager.add_task(layer_no, e, new_nn, parent_hid, i, neurons.copy())
+                print(yellow, '         |->', i, ')', self.task_manager.last_task, reset, sep='', end=' ') 
+                if debug_mode:
+                    debug_info_print(self.man, e, self.domain, layer_no-2, 'splitted', end='')
+                    print(' --dim', dim, ' bound:[', lb[dim], ',', ub[dim], ']  ', sep='', end='')
+                print()
         else: # non-activate layers...
             print('   |-refine abstract domain: [operation:Affine, action:ignore] FOUND approximation error. opt(x)=∅, while opt(affine(x))≠∅. We should take inverse, ignore here for now.')
         
@@ -295,7 +300,17 @@ class Analyzer:
         return num_layer-len(list_elements)+1
     
     
-    
+    def attack_condition(self, task, i, method=1):
+        if method == 1:
+            if task.start_ir == i:
+                return False
+        elif method == 2:
+            return self.task_manager.checkLimit(i)
+        else:
+            if task.start_ir != i:
+                task.neurons_reset()
+            return self.task_manager.checkLimit(i, 7)
+        return True
     
     def analyze_task(self, task, refine):
         # we do the initialization here because it might be re-used. Every time we re-use it, we get a new object of Layers()
@@ -312,7 +327,7 @@ class Analyzer:
         # print('* Given abstraction (before layer', i, '): ', sep='', end='')
         #zono_debug_info_print(self.man, element, '↓in')
         while i<len(self.ir_list):
-            last_status = (i, list_elements[-1], taskhid)
+            last_status = (i, list_elements[-1], taskhid, task.get_split_neurons())
             this_layer = self.ir_list[i]
             print(back_blue, taskhid.ljust(label_len+(2*i), '┈'), ' data @', i-1, ' ⟿ ⟿  ', this_layer.op().center(6,' '), ' ⟿ ⟿  data @', i, reset, sep='')    
             element = this_layer.transformer(nn, self.man, element)
@@ -324,7 +339,7 @@ class Analyzer:
                 #poly_split(self.man, element, self.ir_list, nn, 1, [1])
 
 
-            if self.use_abstract_attack and this_layer.op() in ['Relu', 'Sigmoid', 'Tanh'] and refine:
+            if self.use_abstract_attack and this_layer.op() in ['Relu', 'Sigmoid', 'Tanh'] and refine and self.attack_condition(task, i, 3):
 
                 attack_result = self.attack_abstract_domain(i + 1, element)
                 if attack_result.success:
@@ -336,7 +351,7 @@ class Analyzer:
                     elif new_layer != i:
                         if new_layer == task.start_ir-1:
                             new_layer += 1
-                        last_status = (new_layer, list_elements[new_layer-task.start_ir], taskhid)
+                        last_status = (new_layer, list_elements[new_layer-task.start_ir], taskhid, task.get_split_neurons())
                         attack_result = self.update_attack_result(new_layer+1, list_elements[new_layer-task.start_ir+1], attack_result)
  
 
@@ -433,7 +448,7 @@ class Analyzer:
                 print('Counterexample found for the input layer, and thus the property does not hold. This task fails.')
                 return Verified_Result.UnSafe
         
-        self.task_manager.add_task(layer_no, element, nn, '', '◈')
+        self.task_manager.add_task(layer_no, element, nn, '', '◈', set())
                 
         ### SCHEDULE AND RUN THE TASKS ###
         task_verified = Verified_Result.Safe

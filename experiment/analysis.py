@@ -1,6 +1,4 @@
 import os
-import sys
-import csv
 import pandas as pd
 
 
@@ -32,21 +30,26 @@ def analysis(table):
     #print(output)
     return output
 
+def get_k(filename):
+    idx = filename.find('_k')
+    return int(filename[idx+2])
+
 
 def main():
-    dir_path = "raw"
+    dir_path = "raw/free_method"
     onlyfiles = [f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
-    header = ["Model", "Verify Safe with deeppoly", "Verify Safe with refinedeeppoly", "Verify Unsafe", "Verify Unknow",
+    header = ["Model", "k", "Verify Safe with deeppoly", "Verify Safe with refinedeeppoly", "Verify Unsafe", "Verify Unknow",
             "Total test", "Average deepoly time", "Average refinepolytime", "Avarage Unknow","Detail Success Refine", "Detail Fail Refine"]
     body = []
     for filename in onlyfiles:
-            table = pd.read_csv(os.path.join(dir_path, filename))
-            t_filename, _ = os.path.splitext(filename)
-            analyize_detail = analysis(table)
-            analyize_detail.insert(0, t_filename)
-            body.append(tuple(analyize_detail))
-            #print(analyize_detail)
+        table = pd.read_csv(os.path.join(dir_path, filename))
+        t_filename, _ = os.path.splitext(filename)
+        analyize_detail = analysis(table)
+        analyize_detail.insert(0, get_k(t_filename))
+        analyize_detail.insert(0, t_filename)
+        body.append(tuple(analyize_detail))
+        #print(analyize_detail)
     out_df = pd.DataFrame(body, columns=header)
     print(out_df)
-    out_df.to_excel("analysis.xlsx", sheet_name="Sheet1")
+    out_df.to_excel("temp.xlsx", sheet_name="Sheet1")
 main()
