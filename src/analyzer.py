@@ -6,6 +6,7 @@
 from types import new_class
 import numpy as np
 import gc
+import tracemalloc
 from random import *
 from elina_abstract0 import *
 from elina_manager import *
@@ -309,7 +310,7 @@ class Analyzer:
         else:
             if task.start_ir != i:
                 task.neurons_reset()
-            return self.task_manager.checkLimit(i, 7)
+            return self.task_manager.checkLimit(i, 6)
         return True
     
     def analyze_task(self, task, refine):
@@ -347,6 +348,12 @@ class Analyzer:
                     new_layer = i
                     if new_layer == 0:
                         print("Counterexample found for the input layer, and thus the property does not hold. This task fails.")
+                        elina_abstract0_free(self.man, element)
+                        for e in list_elements:
+                            if self.domain == "deeppoly":
+                                e = e[0]
+                            elina_abstract0_free(self.man, e)
+                        gc.collect()
                         return False
                     elif new_layer != i:
                         if new_layer == task.start_ir-1:
@@ -362,6 +369,12 @@ class Analyzer:
                             continue
                             print('** The domain can not be refined anymore. **')
                             return False  # in this case, we can not refine the domain any more, and thus return false
+                    elina_abstract0_free(self.man, element)
+                    for e in list_elements:
+                        if self.domain == "deeppoly":
+                            e = e[0]
+                        elina_abstract0_free(self.man, e)
+                    gc.collect()
                     return None
             i+=1
         
@@ -461,7 +474,7 @@ class Analyzer:
             print(bold, '<', taskid, '> ---> analyzing....', reset, ' ', self.task_manager, sep='')
             # print(lgreen, bold, '<', taskid, '> ---> on analyzing task ', this_task, reset, '  {remaining ', self.task_manager, '}', sep='')
             status = self.analyze_task(this_task, False)
-            if not status and self.use_abstract_attack and self.task_manager.size() < 1028 and self.task_manager.cid < 5000:
+            if not status and self.use_abstract_attack and self.task_manager.size() < 1028 and self.task_manager.cid < 4000:
                 print(lgreen, bold, "\nFailed. Starting to attack and refine. \n", nonbold, reset)
                 status = self.analyze_task(this_task, True)
             this_task.destroy(self.man)
@@ -502,6 +515,7 @@ class Analyzer:
             assert self.property, "use abstract_attack must provide the analyzer with desired property"
             
         # print('************ analyzebox.analyze ***********')
+        
         is_verified = self.analyze_abstract(specLB, specUB)
         output_info = (self.task_manager.get_num_all_task(), self.task_manager.get_largest_size())
         return is_verified, output_info

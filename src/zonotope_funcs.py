@@ -19,8 +19,8 @@ from ctypes.util import *
 from layers import *
 from poly import *
 
-#debug_mode = False
-debug_mode = True
+debug_mode = False
+#debug_mode = True
 
 libc = CDLL(find_library('c'))
 printf = libc.printf
@@ -165,6 +165,7 @@ def pk_bound(man, element):
         elina_double_set_scalar(up, interval.contents.sup, MpfrRnd.MPFR_RNDU)
         lbi.append(down.value)
         ubi.append(up.value)
+        elina_interval_free(interval)
     return lbi, ubi
 
 
@@ -341,6 +342,7 @@ def poly_split(man, element, ir_list, nn, k, split_dims, split_values=None, meet
             elina_linexpr0_free(linexprs[0][i])
             elina_linexpr0_free(linexprs[1][i])
         elina_abstract0_free(pk_man, o1)
+        elina_manager_free(pk_man)
     return res
 
 def abstract_split(man, domain, element, ir_list, nn, k, split_dims, split_values=None):

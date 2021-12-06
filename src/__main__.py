@@ -1,9 +1,12 @@
 import sys
 
+from numpy.lib.utils import safe_eval
+
 sys.path.insert(0, '../elina/python_interface/')
 sys.path.insert(0, '../os/deepg/code/')
 import os
 import numpy as np
+import pandas as pd
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from analyzer import Verified_Result
 from eran import ERAN
@@ -13,10 +16,11 @@ import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
 import csv
 import time
-from tqdm import tqdm
 import argparse
 from config import config
 from colors import *
+import tracemalloc
+import gc
 
 
 
@@ -140,13 +144,14 @@ def output_to_csv(filename, output_info):
         writer.writerow(['Testcase', 'Verify result', 'time', 'Total number of task', 'Largest number of task'])
         writer.writerows(output_info)
 
-def add_row_to_file(filename, output_info):
+def add_row_to_file(filename, output_info, header=None):
     out = []
     if not os.path.isfile(filename):
-        out.append(['Testcase', 'Verify result', 'time', 'Total number of task', 'Largest number of task'])
+        if not header:
+            header = ['Testcase', 'Verify result', 'time', 'Total number of task', 'Largest number of task']
+        out.append(header)
     out.append(output_info)
     with open(filename, 'a') as csvfile:
-        print("How", filename)
         writer = csv.writer(csvfile)
         writer.writerows(out)
 
@@ -261,10 +266,12 @@ def main(config):
             tests = get_dataset(config.x_input_dataset, config.y_input_dataset)
     
     start = config.start
+    end = config.end
+
     # tf.InteractiveSession().as_default()
     for i, test in enumerate(tests, start):
-        #if i not in list(range(start,100)):
-        #    continue 
+        if i not in list(range(7,8)):
+            continue 
         num_graphs.append(len(tf.Session().graph._nodes_by_name.keys()))
         #if i not in [80]:
         #    continue
@@ -335,6 +342,7 @@ def main(config):
 
         start = time.time()
         is_verified, output_info = eran.analyze_box(specLB, specUB, domain, problem_id=i, use_abstract_attack=config.use_abstract_attack, attack_method=config.attack_method, use_abstract_refine=config.use_abstract_refine, target_label=target_label)
+        
         end = time.time()
         output_infos.append([i, is_verified, end-start, *output_info])
         if config.output:
@@ -358,7 +366,7 @@ def main(config):
     print('Verified images:', verified_test)
     print('Verified unsafe images:', verified_unsafe)
     print('Total task born:', np.sum(np.array(output_infos)[:,-1]), 'Max task born:', np.max(np.array(output_infos)[:,-1]))
-
+    return output_infos
 
 def test():
     mnist_relu_model = ['3_10', '3_20', '3_30', 
@@ -384,6 +392,206 @@ def test():
         tf.reset_default_graph()
         config.start = 0
         print("Total run time:", end-start, "seconds")
+
+def find_limit(config, eran, data):
+    dataset = config.dataset
+    domain = config.domain
+    i, image, target_label, means, stds, is_trained_with_pytorch = data
+    epsilon = config.epsilon
+    stop = True
+    output = [i, -1, [], []]
+    
+    while stop and epsilon <=1:
+        if(dataset=='mnist'):
+            specLB = np.clip(image - epsilon,0,1)
+            specUB = np.clip(image + epsilon,0,1)
+        else:
+            if(is_trained_with_pytorch):
+                specLB = np.clip(image - epsilon,0,1)
+                specUB = np.clip(image + epsilon,0,1)
+            else:
+                specLB = np.clip(image-epsilon,-0.5,0.5)
+                specUB = np.clip(image+epsilon,-0.5,0.5)
+        if(is_trained_with_pytorch):
+            normalize(specLB, means, stds, dataset, False)
+            normalize(specUB, means, stds, dataset, False)
+            # print('image:', np.ndarray.flatten(image)[:30], '...')
+            # print(' ε:', epsilon)
+            # print('++ input lower bound:', list(np.ndarray.flatten(specLB))[:10], '...')
+            # print('++ input upper bound:', list(np.ndarray.flatten(specUB))[:10], '...')
+        sys.stdout.flush()
+        
+        start = time.time()
+        is_verified, output_info = eran.analyze_box(specLB, specUB, domain, problem_id=i, use_abstract_attack=config.use_abstract_attack, attack_method=config.attack_method, use_abstract_refine=config.use_abstract_refine, target_label=target_label)
+        end = time.time()
+        stop = is_verified == Verified_Result.Safe
+        if is_verified == Verified_Result.Safe:
+            print("img", i, "Verified.")
+            output[1] = epsilon
+            output[2].append(end-start)
+            output[3].append(output_info[0])
+            #if config.use_abstract_attack:
+            #    df = pd.read_csv(config.output)
+            #    df.loc[df['Testcase'] == i, 'RefinePoly limit'] = epsilon
+            #    df.loc[df['Testcase'] == i, 'Refine time'] = str(output[2])
+            #    df.loc[df['Testcase'] == i, 'Refine numtask'] = str(output[3])
+            #    df.to_csv(config.output, index=False)
+
+        elif is_verified == Verified_Result.Unknow:
+            print("img", i, "Failed (may false negative, as abstract interpretation is only sound)")
+        else:
+            print("img", i, "Verified as Unsafe")
+
+        print(end - start, "seconds")
+        epsilon += 0.001
+    return output
+
+def run(config, eran, tests):
+    netname = config.netname
+    _, file_extension = os.path.splitext(netname)
+    is_trained_with_pytorch = file_extension==".pyt"
+    is_onnx = file_extension == ".onnx"
+    is_trained_with_pytorch = is_trained_with_pytorch or is_onnx
+    dataset = config.dataset
+    filename = config.output
+
+    if not is_trained_with_pytorch:
+        means = [0]
+        stds = [1]
+    if config.mean:
+        means = config.mean
+    if config.std:
+        stds = config.std
+    epsilon = config.epsilon
+    assert (epsilon >= 0) and (epsilon <= 1), "epsilon can only be between 0 and 1"
+
+    
+    start = config.start
+    for i, test in enumerate(tests[start:100], start):
+        output = [i, -1, -1, [], []]
+        if(dataset=='mnist') and not config.x_input_dataset:
+            image= np.float64(test[1:len(test)])/np.float64(255)
+        elif(dataset=='test') or config.x_input_dataset:
+            image=np.float64(test[1:len(test)])
+                
+        if i>0:
+            print ('\n'*3)
+        print(lgreen, '‣'*56, ' test ', i, ' ', '‣'*56, reset, sep='')
+        print('#'*37, 'concrete model evaluation', '#'*36)
+        normalized_image = np.reshape(np.copy(image), (-1))
+        if is_trained_with_pytorch:
+            normalize(normalized_image, means, stds, dataset, False)
+        target_label = int(test[0])
+        print('==> target label: ', target_label)
+        
+        cstart = time.time()
+        is_verified, dominant_class = eran.analyze_box(normalized_image, normalized_image, 'concrete', target_label=target_label)
+        cend = time.time()
+        if not is_verified:
+            print("img",i,"not considered, correct_label", target_label, "classified label ", dominant_class)
+            continue
+        print("img", i, "concretely labeled correctly")
+        print("time ", cend - cstart, ' seconds\n\n')
+
+        
+        print('#'*38, 'abstract interpretation', '#'*37)
+        sys.stdout.flush()
+        data = (i, image, target_label, means, stds, is_trained_with_pytorch)
+        deeppoly_out = find_limit(config, eran, data)
+        output[1] = deeppoly_out[1] if deeppoly_out[1] != -1 or config.epsilon == 0.001 else config.epsilon
+        output[2] = output[1]
+
+        config.epsilon = deeppoly_out[1] + 0.001       
+        config.use_abstract_attack = True
+        config.use_abstract_refine = True
+        refine_out = find_limit(config, eran, data)
+        output[2] = refine_out[1] if refine_out[1] != -1 else output[1]
+        output[3] = refine_out[2]
+        output[4] = refine_out[3]
+        add_row_to_file(filename, output, ['Testcase', 'DeepPoly limit', 'RefinePoly limit', 'Refine time', 'Refine numtask'])
+
+
+        config.epsilon = 0.001
+        config.use_abstract_attack = False
+        config.use_abstract_refine = False
+        start = 0
+
+
+def getERAN(netname, dataset):
+    _, file_extension = os.path.splitext(netname)
+    is_trained_with_pytorch = file_extension==".pyt"
+    is_saved_tf_model = file_extension==".meta"
+    is_pb_file = file_extension==".pb"
+    is_onnx = file_extension == ".onnx"
+    is_trained_with_pytorch = is_trained_with_pytorch or is_onnx
+    non_layer_operation_types = ['NoOp', 'Assign', 'Const', 'RestoreV2', 'SaveV2', 'PlaceholderWithDefault', 'IsVariableInitialized', 'Placeholder', 'Identity']
+    if is_saved_tf_model or is_pb_file:
+        print('#### is saved tf model or is pb file')
+        netfolder = os.path.dirname(netname)
+        tf.logging.set_verbosity(tf.logging.ERROR)
+
+        sess = tf.Session()
+        if is_saved_tf_model:
+            saver = tf.train.import_meta_graph(netname)
+            saver.restore(sess, tf.train.latest_checkpoint(netfolder+'/'))
+        else:
+            with tf.gfile.GFile(netname, "rb") as f:
+                graph_def = tf.GraphDef()
+                graph_def.ParseFromString(f.read())
+                sess.graph.as_default()
+                tf.graph_util.import_graph_def(graph_def, name='')
+        ops = sess.graph.get_operations()
+        last_layer_index = -1
+        while ops[last_layer_index].type in non_layer_operation_types:
+            last_layer_index -= 1
+        eran = ERAN(sess.graph.get_tensor_by_name(ops[last_layer_index].name + ':0'), sess)
+    else:
+        if(dataset=='mnist'):
+            num_pixels = 784
+        elif (dataset=='cifar10'):
+            num_pixels = 3072
+        elif(dataset=='acasxu'):
+            num_pixels = 5
+        elif(dataset=='test'):
+            num_pixels = 2
+        if is_onnx:
+            model, is_conv = read_onnx_net(netname)
+            # this is to have different defaults for mnist and cifar10
+        else:
+            model, is_conv, means, stds = read_tensorflow_net(netname, num_pixels, is_trained_with_pytorch)
+        # print('model:', model)
+        eran = ERAN(model, is_onnx=is_onnx)
+    return eran    
+
+def newTest():
+    mnist_relu_model = ['3_10', '3_20', '3_30', 
+                        '4_10', '4_20', '4_30',
+                        '5_10', '5_20',
+                        '3_40', '5_30',  '4_40', '5_40', '3_50', '4_50', '5_50'
+                        ]
+    model_folder = '../benchmark/cegar/nnet/'
+    output_folder = config.output
+    config.output = None
+    config.start = 27
+    config.epsilon = 0.001
+    config.use_abstract_attack = False
+    config.use_abstract_refine = False
+    for m in mnist_relu_model[13:]:
+        model_name = 'mnist_tanh_' + m
+        config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
+        filename = '{}/limit_test_{}.csv'.format(output_folder, model_name)
+        config.output = filename
+        if config.dataset:
+            if not config.x_input_dataset:
+                tests = get_tests(config.dataset, config.geometric)
+            else:
+                tests = get_dataset(config.x_input_dataset, config.y_input_dataset)
+        eran = getERAN(config.netname, config.dataset)
+        run(config, eran, tests)
+        config.start = 0 
+
+
+    
 
 
 if __name__ == "__main__":
@@ -420,4 +628,9 @@ if __name__ == "__main__":
     config.json = vars(args)
 
     main(config)
+
     #test()
+    #newTest()
+    #filtr = tracemalloc.Filter(inclusive=True, filename_pattern='*analyzer.py')
+    #snapshot = snapshot.filter_traces([filtr])    
+

@@ -34,3 +34,4 @@ class config:
     y_input_dataset = None
     output = None
     start = 0
+    end = 100

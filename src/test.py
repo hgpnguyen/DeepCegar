@@ -105,6 +105,7 @@ def doSomething(lincons0_array, dim, nbcons):
         interval = elina_abstract0_bound_dimension(man, o1, i)
         print_c("Dimension {}:".format(i))
         elina_interval_fprint(cstdout, interval)
+        elina_interval_free(interval)
         print_c("\n")
     
     join_expr = createSimpleLinconsArr([[1,0]], [[2]])
@@ -122,6 +123,7 @@ def doSomething(lincons0_array, dim, nbcons):
         print("Py Down:", d.value)
         elina_double_set_scalar(d, interval.contents.sup, MpfrRnd.MPFR_RNDU)
         print("Py Up:", d.value)
+        elina_interval_free(interval)
 
     return None
 
