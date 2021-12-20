@@ -15,6 +15,7 @@ from concrete_nodes import *
 from zonotope_nodes import *
 from poly_nodes import *
 from attack_domain import *
+from causality import Causality
 
 from layers import *
 from task_manager import *
@@ -49,6 +50,7 @@ class Analyzer:
         self.refine = True if 'refine' in domain else False   
         self.concrete_executor = None
         self.abstract_attacker = None
+        self.causality = None
         self.man = None
         self.property = None
         self.nr_classes = self.ir_list[-1].output_length
@@ -105,6 +107,8 @@ class Analyzer:
         if self.abstract_attacker is None:
             self.abstract_attacker = AbstractDomainAttack(self.concrete_executor)
             self.abstract_attacker.target_at_property(self.property)
+        if self.causality is None:
+            self.causality = Causality(self.concrete_executor, self.ir_list[0].specLB, self.ir_list[0].specUB)
             
         if debug_mode:
             print('target property:', self.property)
@@ -140,10 +144,11 @@ class Analyzer:
         
         
     def get_first_k_dimensions_to_split(self, attack_result, k, strategy, neurons, lb=None, ub=None, is_relu=False):
-        strategies = ['grad_and_scale', 'lb_similar_with_ub_first', 'grad_larger_first', 'input_ub_larger_first', 'input_lb_smaller_first', 'input_interval_larger_first', 'output_smaller_first', 'output_smaller_first_only_when_neg']
+        strategies = ['grad_and_scale', 'causality', 'lb_similar_with_ub_first', 'grad_larger_first', 'input_ub_larger_first', 'input_lb_smaller_first', 'input_interval_larger_first', 'output_smaller_first', 'output_smaller_first_only_when_neg']
         assert strategy in strategies
         x = attack_result.x
         grad = attack_result.grad
+        causality = attack_result.causality
         dims = len(x)        
         
         all_indicies = range(dims)
@@ -165,7 +170,9 @@ class Analyzer:
             # this only works for relu, lb<0 and ub>0
             all_indicies = [i for i in all_indicies if ub[i]!=lb[i]]
             ranked_list = sorted(all_indicies, key=lambda s: (-lb[s]*ub[s])/((ub[s]-lb[s])**2))
-        if strategy == 'grad_larger_first':
+        elif strategy == 'causality':
+            ranked_list = sorted(all_indicies, key=lambda s: causality[s])
+        elif strategy == 'grad_larger_first':
             ranked_list = sorted(all_indicies, key=lambda s: abs(grad[s]))
         elif strategy == 'output_smaller_first':
             ranked_list = sorted(all_indicies, key=lambda s: 1-abs(x[s]/(ub[s]-lb[s])) if ub[s]!=lb[s] else 0.0)
@@ -200,6 +207,11 @@ class Analyzer:
             print(gray, bold, 'refine the last domain: ', nonbold, reset, end='')
             debug_info_print(self.man, element, self.domain, layer_no-2, 'to refine')
 
+        causal = []
+        for i in range(len(lb)):
+            causal.append(self.causality.get_ie(i, layer_no, self.target_label, lb[i], ub[i]))
+        attack_result.causality = causal
+
         # print(' - on refine -')
         # ir_class = type(self.ir_list[layer]).__name__
         # is_affine = ('Affine' in ir_class)
@@ -219,13 +231,8 @@ class Analyzer:
                 print('   |-refine [operation:Relu, action: i)0-splitting first, ii) s-splitting]') # grad:', x_grad[:10], '...')
                 # print('[RELU refine] (s-splitting) Can not refine the domain via splitting only one dimension due to no negative y coordinate.')
                 # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'grad_larger_first', lb, ub, is_relu=True)
-                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'grad_and_scale', neurons, lb, ub, is_relu=True)
-                # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', lb, ub, is_relu=True)
-                # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', lb, ub)
-                # while len(split_dims) == 0:
-                    # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'grad_larger_first', lb, ub, is_relu=True)
-                    # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', lb, ub)
-                    # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'lb_similar_with_ub_first', lb, ub)
+                #split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'grad_and_scale', neurons, lb, ub, is_relu=True)
+                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'causality', neurons, lb, ub, is_relu=True)
                 if len(split_dims) == 0:
                     print('Relu approximation is already eliminated. Since attack succeeds, over-approximation must be happened in the last layer. Should back propagate!')
                     return False
@@ -237,7 +244,8 @@ class Analyzer:
                 #refined_elements = zono_specified_split(self.man, element, k, split_dims, split_values)
             else: # elif is_tanh or is_sigmoid:
                 print('   |-refine [operation:Tanh/Sigmoid, action: s-splitting].')
-                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', neurons, lb, ub)
+                #split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', neurons, lb, ub)
+                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'causality', neurons, lb, ub)
                 if len(split_dims) == 0:
                     return False
                 for dim in split_dims:
@@ -262,18 +270,6 @@ class Analyzer:
             print('   |-refine abstract domain: [operation:Affine, action:ignore] FOUND approximation error. opt(x)=∅, while opt(affine(x))≠∅. We should take inverse, ignore here for now.')
         
         return True
-        # add the splitted elements as new tasks for analysis
-        # if len(refined_elements)>0:
-            # print('     |-split the dim', split_dims, 'into', len(refined_elements), 'subtasks: ', end='')
-            # self.task_manager.add_task(layer_no, refined_elements[0], parent_hid, 0)
-            # self.task_manager.add_task(layer_no, refined_elements[0], parent_hid, 1)
-            # print(0, '>', self.task_manager.last_task, sep='')
-            # for i, e in enumerate(refined_elements):
-            #     # zono_constrained_spec(self.man, e, True)
-            #     if not only_split_not_add_new_task:
-            #         self.task_manager.add_task(layer_no, e, parent_hid, i)
-            #         print(i, ')', self.task_manager.last_task, sep='', end='  ')
-            # print()
             
     
     

@@ -6,7 +6,6 @@ sys.path.insert(0, '../elina/python_interface/')
 sys.path.insert(0, '../os/deepg/code/')
 import os
 import numpy as np
-import pandas as pd
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from analyzer import Verified_Result
 from eran import ERAN
@@ -19,8 +18,7 @@ import time
 import argparse
 from config import config
 from colors import *
-import tracemalloc
-import gc
+
 
 
 
@@ -270,8 +268,6 @@ def main(config):
 
     # tf.InteractiveSession().as_default()
     for i, test in enumerate(tests, start):
-        if i not in list(range(7,8)):
-            continue 
         num_graphs.append(len(tf.Session().graph._nodes_by_name.keys()))
         #if i not in [80]:
         #    continue
@@ -572,7 +568,7 @@ def newTest():
     model_folder = '../benchmark/cegar/nnet/'
     output_folder = config.output
     config.output = None
-    config.start = 27
+    config.start = 0
     config.epsilon = 0.001
     config.use_abstract_attack = False
     config.use_abstract_refine = False

@@ -14,3 +14,4 @@ class AttackResult(object):
         self.x_set = []
         self.distance_set = []
         self.gene = None
+        self.causality = None
