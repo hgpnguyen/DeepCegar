@@ -426,6 +426,8 @@ def find_limit(config, eran, data):
             output[1] = epsilon
             output[2].append(end-start)
             output[3].append(output_info[0])
+            if output_info[0] > 2000:
+                return output
             #if config.use_abstract_attack:
             #    df = pd.read_csv(config.output)
             #    df.loc[df['Testcase'] == i, 'RefinePoly limit'] = epsilon
@@ -463,7 +465,7 @@ def run(config, eran, tests):
 
     
     start = config.start
-    for i, test in enumerate(tests[start:100], start):
+    for i, test in enumerate(tests[start:config.end], start):
         output = [i, -1, -1, [], []]
         if(dataset=='mnist') and not config.x_input_dataset:
             image= np.float64(test[1:len(test)])/np.float64(255)
@@ -568,14 +570,15 @@ def newTest():
     model_folder = '../benchmark/cegar/nnet/'
     output_folder = config.output
     config.output = None
-    config.start = 0
+    config.start = 11
+    config.end = min(config.start + 25, 100)
     config.epsilon = 0.001
     config.use_abstract_attack = False
     config.use_abstract_refine = False
-    for m in mnist_relu_model[13:]:
-        model_name = 'mnist_tanh_' + m
+    for m in mnist_relu_model[12:13]:
+        model_name = 'mnist_relu_' + m
         config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
-        filename = '{}/limit_test_{}.csv'.format(output_folder, model_name)
+        filename = '{}/causality_test_{}.csv'.format(output_folder, model_name)
         config.output = filename
         if config.dataset:
             if not config.x_input_dataset:
@@ -584,7 +587,15 @@ def newTest():
                 tests = get_dataset(config.x_input_dataset, config.y_input_dataset)
         eran = getERAN(config.netname, config.dataset)
         run(config, eran, tests)
-        config.start = 0 
+        while config.end < 100:
+            config.start = config.end
+            config.end = min(config.start + 25, 100)
+            tf.reset_default_graph()
+            eran = getERAN(config.netname, config.dataset)
+            run(config, eran, tests)
+        config.start = 0
+        config.end = 25 
+        tf.reset_default_graph()
 
 
     
@@ -623,10 +634,10 @@ if __name__ == "__main__":
         setattr(config, k, v)
     config.json = vars(args)
 
-    main(config)
+    #main(config)
 
     #test()
-    #newTest()
+    newTest()
     #filtr = tracemalloc.Filter(inclusive=True, filename_pattern='*analyzer.py')
     #snapshot = snapshot.filter_traces([filtr])    
 

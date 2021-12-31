@@ -108,7 +108,7 @@ class Analyzer:
             self.abstract_attacker = AbstractDomainAttack(self.concrete_executor)
             self.abstract_attacker.target_at_property(self.property)
         if self.causality is None:
-            self.causality = Causality(self.concrete_executor, self.ir_list[0].specLB, self.ir_list[0].specUB)
+            self.causality = Causality(self.concrete_executor)
             
         if debug_mode:
             print('target property:', self.property)
@@ -207,9 +207,7 @@ class Analyzer:
             print(gray, bold, 'refine the last domain: ', nonbold, reset, end='')
             debug_info_print(self.man, element, self.domain, layer_no-2, 'to refine')
 
-        causal = []
-        for i in range(len(lb)):
-            causal.append(self.causality.get_ie(i, layer_no, self.target_label, lb[i], ub[i]))
+        causal = self.causality.get_ie(layer_no, self.target_label, lb, ub)
         attack_result.causality = causal
 
         # print(' - on refine -')
@@ -306,7 +304,7 @@ class Analyzer:
         else:
             if task.start_ir != i:
                 task.neurons_reset()
-            return self.task_manager.checkLimit(i, 6)
+            return self.task_manager.checkLimit(i, 7)
         return True
     
     def analyze_task(self, task, refine):
@@ -470,7 +468,7 @@ class Analyzer:
             print(bold, '<', taskid, '> ---> analyzing....', reset, ' ', self.task_manager, sep='')
             # print(lgreen, bold, '<', taskid, '> ---> on analyzing task ', this_task, reset, '  {remaining ', self.task_manager, '}', sep='')
             status = self.analyze_task(this_task, False)
-            if not status and self.use_abstract_attack and self.task_manager.size() < 1028 and self.task_manager.cid < 4000:
+            if not status and self.use_abstract_attack and self.task_manager.size() < 450 and self.task_manager.cid < 5000:
                 print(lgreen, bold, "\nFailed. Starting to attack and refine. \n", nonbold, reset)
                 status = self.analyze_task(this_task, True)
             this_task.destroy(self.man)
