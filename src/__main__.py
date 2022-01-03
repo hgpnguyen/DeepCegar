@@ -575,7 +575,7 @@ def newTest():
     config.epsilon = 0.001
     config.use_abstract_attack = False
     config.use_abstract_refine = False
-    for m in mnist_relu_model[12:13]:
+    for m in mnist_relu_model[14:15]:
         model_name = 'mnist_relu_' + m
         config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
         filename = '{}/causality_test_{}.csv'.format(output_folder, model_name)
