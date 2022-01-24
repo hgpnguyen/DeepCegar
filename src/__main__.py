@@ -570,13 +570,13 @@ def newTest():
     model_folder = '../benchmark/cegar/nnet/'
     output_folder = config.output
     config.output = None
-    config.start = 11
+    config.start = 0
     config.end = min(config.start + 25, 100)
     config.epsilon = 0.001
     config.use_abstract_attack = False
     config.use_abstract_refine = False
-    for m in mnist_relu_model[14:15]:
-        model_name = 'mnist_relu_' + m
+    for m in mnist_relu_model[12:]:
+        model_name = 'mnist_sigmoid_' + m
         config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
         filename = '{}/causality_test_{}.csv'.format(output_folder, model_name)
         config.output = filename
