@@ -20,6 +20,7 @@ from config import config
 
 
 from fppoly import *
+#from fppoly_gpu import *
 
 
 from elina_interval import *
@@ -27,9 +28,10 @@ from elina_abstract0 import *
 from elina_manager import *
 from zonoml import *
 from functools import reduce
+from refine_activation import *
 
 
-def calc_bounds(man, element, nn, destroy=True):
+def calc_bounds(man, element, nn, nlb, nub, is_refine_layer = False, destroy=True):
     layerno = nn.calc_layerno()
     bounds = box_for_layer(man, element, layerno)
     num_neurons = get_num_neurons_in_layer(man, element, layerno)
@@ -38,6 +40,9 @@ def calc_bounds(man, element, nn, destroy=True):
     ubi = [x.contents.sup.contents.val.dbl for x in itv]
     nn.specLB.append(lbi)
     nn.specUB.append(ubi)
+    if is_refine_layer:
+        nlb.append(lbi)
+        nub.append(ubi)
     if destroy:
         elina_interval_array_free(bounds,num_neurons)
         return lbi, ubi
@@ -223,8 +228,8 @@ class DeeppolyFCNode(DeeppolyNode):
 
     def op(self):
         return 'FC'
-
-    def transformer(self, nn, man, element):
+ 
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         """
         transformer for the first layer of a neural network, if that first layer is fully connected with relu
         
@@ -241,7 +246,7 @@ class DeeppolyFCNode(DeeppolyNode):
             abstract element after the transformer 
         """
         handle_fully_connected_layer(man, element, *self.get_arguments())
-        calc_bounds(man, element, nn)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.ffn_counter+=1
         
         return element
@@ -289,7 +294,7 @@ class DeeppolyReluNode(DeeppolyNonlinearity):
     def op(self):
         return 'Relu'
         
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         """
         transforms element with handle_relu_layer
         
@@ -307,8 +312,11 @@ class DeeppolyReluNode(DeeppolyNonlinearity):
         """
         length = self.output_length
         use_default_heuristic = True
-        handle_relu_layer(*self.get_arguments(man, element), use_default_heuristic)
-        calc_bounds(man, element, nn)
+        if refine:
+            refine_activation_with_solver_bounds(nn, self, man, element, nlb, nub, relu_groups, config.timeout_lp, config.timeout_milp, use_default_heuristic, 'deeppoly')
+        else:
+            handle_relu_layer(*self.get_arguments(man, element), use_default_heuristic)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.activation_counter+=1
 
         return element
@@ -319,7 +327,7 @@ class DeeppolySignNode(DeeppolyNonlinearity):
     def op(self):
         return 'Sign'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         """
         transforms element with handle_sign_layer
         
@@ -339,7 +347,7 @@ class DeeppolySignNode(DeeppolyNonlinearity):
         #    refine_activation_with_solver_bounds(nn, self, man, element, nlb, nub, relu_groups, timeout_lp, timeout_milp, use_default_heuristic, 'deeppoly')
         #else:
         handle_sign_layer(*self.get_arguments(man, element))
-        calc_bounds(man, element, nn)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.activation_counter+=1
 
         return element
@@ -350,7 +358,7 @@ class DeeppolySigmoidNode(DeeppolyNonlinearity):
     def op(self):
         return 'Sigmoid'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         """
         transforms element with handle_sigmoid_layer
         
@@ -368,8 +376,11 @@ class DeeppolySigmoidNode(DeeppolyNonlinearity):
         """
         length = self.output_length
         use_default_heuristic = True
-        handle_sigmoid_layer(*self.get_arguments(man, element), use_default_heuristic)
-        calc_bounds(man, element, nn)
+        if refine:
+            refine_activation_with_solver_bounds(nn, self, man, element, nlb, nub, relu_groups, config.timeout_lp, config.timeout_milp, use_default_heuristic, 'deeppoly')
+        else:
+            handle_sigmoid_layer(*self.get_arguments(man, element), use_default_heuristic)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.activation_counter+=1
 
         return element
@@ -380,7 +391,7 @@ class DeeppolyTanhNode(DeeppolyNonlinearity):
     def op(self):
         return 'Tanh'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         """
         transforms element with handle_tanh_layer
         
@@ -397,8 +408,11 @@ class DeeppolyTanhNode(DeeppolyNonlinearity):
             abstract element after the transformer
         """
         use_default_heuristic = True
-        handle_tanh_layer(*self.get_arguments(man, element), use_default_heuristic)
-        calc_bounds(man, element, nn)
+        if refine:
+            refine_activation_with_solver_bounds(nn, self, man, element, nlb, nub, relu_groups, config.timeout_lp, config.timeout_milp, use_default_heuristic, 'deeppoly')
+        else:
+            handle_tanh_layer(*self.get_arguments(man, element), use_default_heuristic)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.activation_counter+=1
 
         return element
@@ -451,7 +465,7 @@ class DeeppolyConv2dNode:
     def op(self):
         return 'Conv2D'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         """
         transformer for a convolutional layer, if that layer is an intermediate of the network
         
@@ -468,7 +482,7 @@ class DeeppolyConv2dNode:
             abstract element after the transformer 
         """
         handle_convolutional_layer(man, element, *self.get_arguments())
-        calc_bounds(man, element, nn)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.conv_counter+=1
 
         return element
@@ -502,7 +516,7 @@ class DeeppolyPoolNode:
     def op(self):
         return 'Pooling'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         """
         transformer for a maxpool/averagepool layer, this can't be the first layer of a network
         
@@ -521,7 +535,7 @@ class DeeppolyPoolNode:
         h, w = self.window_size
         H, W, C = self.input_shape
         handle_pool_layer(man, element, (c_size_t *3)(h,w,1), (c_size_t *3)(H, W, C), (c_size_t *2)(self.strides[0], self.strides[1]), self.pad_top, self.pad_left, self.output_shape, self.predecessors, len(self.predecessors), self.is_maxpool)
-        calc_bounds(man, element, nn)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.pool_counter += 1
 
         return element
@@ -544,9 +558,9 @@ class DeeppolyResidualNode:
     def op(self):
         return 'Residual'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         handle_residual_layer(man,element,self.output_length,self.predecessors, len(self.predecessors))
-        calc_bounds(man, element, nn)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.residual_counter += 1
 
         return element
@@ -572,7 +586,7 @@ class DeeppolyGather:
     def op(self):
         return 'Gather'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         handle_gather_layer(man, element, self.indexes)
         return element
 
@@ -589,9 +603,9 @@ class DeeppolyConcat:
     def op(self):
         return 'Concat'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         handle_concatenation_layer(man, element, self.predecessors, len(self.predecessors), self.channels)
-        calc_bounds(man, element, nn)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.concat_counter += 1
         return element
 
@@ -604,8 +618,9 @@ class DeeppolyTile:
     def op(self):
         return 'Tile'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         handle_tiling_layer(man, element, self.predecessors, len(self.predecessors), self.repeats)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True, destroy=False)
         nn.tile_counter += 1
         return element
 
@@ -631,11 +646,11 @@ class DeeppolySubNode:
     def op(self):
         return 'Sub'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         layerno = nn.calc_layerno()
         num_neurons = get_num_neurons_in_layer(man, element, layerno)
         handle_sub_layer(man, element, self.bias, self.is_minuend, num_neurons, self.predecessors, len(self.predecessors))
-        calc_bounds(man, element, nn)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.ffn_counter+=1
         return element
 
@@ -660,8 +675,8 @@ class DeeppolyMulNode:
     def op(self):
         return 'Mul'
 
-    def transformer(self, nn, man, element):
+    def transformer(self, nn, man, element, nlb, nub, relu_groups, refine):
         handle_mul_layer(man, element, self.bias, len(self.bias.reshape(-1)), self.predecessors, len(self.predecessors))
-        calc_bounds(man, element, nn)
+        calc_bounds(man, element, nn, nlb, nub, is_refine_layer=True)
         nn.ffn_counter+=1
         return element

@@ -1,9 +1,13 @@
 import multiprocessing
+from enum import Enum
 
+class Device(Enum):
+    CPU = 0
+    CUDA = 1
 
 class config:
-    # use_milp = True # Whether to use MILP
-    # numproc_milp = multiprocessing.cpu_count() # number of processes to use for MILP solver
+    use_milp = True # Whether to use MILP
+    numproc_milp = multiprocessing.cpu_count() # number of processes to use for MILP solver
     # dyn_krelu = False # dynamically select parameter k
     # use_2relu = False # use 2-relu
     # use_3relu = False # use 3-relu
@@ -13,8 +17,8 @@ class config:
     domain = None # the domain name can be either deepzono, refinezono, deeppoly or refinepoly
     dataset = None # the dataset, can be either mnist, cifar10, or acasxu
     complete = False # flag specifying where to use complete verification or not
-    timeout_lp = 1 # timeout for the LP solver
-    timeout_milp = 1 # timeout for the MILP solver
+    timeout_lp = 100 # timeout for the LP solver
+    timeout_milp = 100 # timeout for the MILP solver
     use_area_heuristic = True # whether to use area heuristic for the DeepPoly ReLU approximation
     mean = None # the mean used to normalize the data with
     std = None # the standard deviation used to normalize the data with
@@ -29,9 +33,13 @@ class config:
     use_abstract_attack = False # Whether to abstract attack to check the validity of current abstract domain.
     attack_method = 'pgd'
     geometric = False # Whether to do geometric analysis
+    device = Device.CPU
     use_abstract_refine = False
     x_input_dataset = None
     y_input_dataset = None
     output = None
+    sparse_n = 100
+    numproc = multiprocessing.cpu_count() # number of processes for milp/lp/krelu
+    refine_neurons = False # refine neurons
     start = 0
     end = 100

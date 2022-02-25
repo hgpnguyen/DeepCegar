@@ -11,6 +11,8 @@ from opt_pk import *
 from zonoml import *
 from elina_interval import *
 from ctypes.util import find_library
+import gurobipy as gp
+from gurobipy import GRB
 
 libc = CDLL(find_library('c'))
 printf = libc.printf
@@ -128,9 +130,16 @@ def doSomething(lincons0_array, dim, nbcons):
     return None
 
 if __name__ == "__main__":
-    linexpr0 = create_linexpr([-2, 2, 0])
-    linexpr0 = addDimension(linexpr0, 2)
-    linexpr1 = negLin(linexpr0)
-    arr = createLinconsArr([[-2,2,1],[2,2,2]], [0,0], [2,1])
-    doSomething(arr, 4, 0)
-    
+    m = gp. Model (" mip1 ")
+    # Create variables
+    x = m.addVar(vtype =GRB.BINARY , name ="x")
+    y = m.addVar(vtype =GRB.BINARY , name ="y")
+    z = m.addVar(vtype =GRB.BINARY , name ="z")
+    # Set objective
+    m.setObjective(x + y + 2 * z, GRB.MAXIMIZE )
+    m.addConstr(x + 2 * y + 3 * z <= 4, "c0")
+    m.addConstr(x + y >= 1, "c1")
+    m.optimize()
+    for v in m. getVars ():
+        print ("%s %g" % (v.varName , v.x))
+    print ("Obj: %g" % m. objVal )    

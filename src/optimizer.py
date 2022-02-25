@@ -260,11 +260,8 @@ class Optimizer:
         output_index_store = {}
         index_o = 0
         for node in output:
-            if isinstance(node, DeepzonoRelu):
-                output_index_store[node.output_name] = index_o - 1
-            else:
-                output_index_store[node.output_name] = index_o
-                index_o += 1
+            output_index_store[node.output_name] = index_o
+            index_o += 1
         for node in output:
             predecessors = (c_size_t * len(node.input_names))()
             i = 0
@@ -272,8 +269,7 @@ class Optimizer:
                 predecessors[i] = output_index_store[input_name]
                 i += 1
             node.predecessors = predecessors
-            if not isinstance(node, DeepzonoRelu):
-                nn.predecessors.append(predecessors)
+            nn.predecessors.append(predecessors)
 
 
 

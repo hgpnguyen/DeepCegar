@@ -195,18 +195,19 @@ def poly_debug_info_print(man, element, layerno):
     print_c(reset)
 
 def element_copy(man, domain, element, ir_list, stop, nn):
-    assert domain == "deepzono" or domain == "deeppoly"
+    assert domain == "deepzono" or domain == "deeppoly" or domain == "refinepoly"
+    refine = True if 'refine' in domain else False  
     if domain == "deepzono":
         return elina_abstract0_copy(man, element)
     else:
-        return poly_copy(man, ir_list, stop, nn)
+        return poly_copy(man, ir_list, stop, nn, refine)
 
-def poly_copy(man, ir_list, stop, nn):
+def poly_copy(man, ir_list, stop, nn, refine):
     assert stop <= len(ir_list)
     element = ir_list[0].transformer(man)
     new_nn = Layers(nn.in_LB, nn.in_UB)
     for i in range(1, stop + 1):
-        element = ir_list[i].transformer(new_nn, man, element)
+        element = ir_list[i].transformer(new_nn, man, element, [], [], [], refine)
         lb , ub = poly_bound(man, element, i-1)
         nlb, nub = nn.specLB[i-1], nn.specUB[i-1]
         assert len(lb) == len(nlb) and len(ub) == len(nub)
@@ -305,7 +306,7 @@ def poly_split(man, element, ir_list, nn, k, split_dims, split_values=None, meet
         lincons0_array = elina_lincons0_array_make(k)
         
     for i in range(total_size):
-        new_e, new_nn = poly_copy(man, ir_list, nn.calc_layerno(), nn)
+        new_e, new_nn = poly_copy(man, ir_list, nn.calc_layerno(), nn, False)
         for j in range(k):
             is_right = i>>j&1
             if meet_lincons_arr:

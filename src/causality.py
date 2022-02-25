@@ -8,22 +8,9 @@ class Causality:
     def __init__(self, executor: Executor) -> None:
         self.ir_list = executor.ir_list
         self.exe = executor
-        self.no_sample = 200
+        self.no_sample = 3000
         #self.x0, self.output_x0 = self.gen_x0()
         self.y0s = [None] * len(executor.ir_list)
-    
-    def gen_x0(self):
-        specLB, specUB = self.specLB, self.specUB
-        valid_x0s = []
-        no_sample = self.no_sample
-        with tf.Session() as sess:
-            self.X = tf.placeholder(tf.float64, (len(specLB), no_sample))
-            Y = self.exe.get_parametric_model(1, self.X)
-            rand_input = np.random.uniform(specLB, specUB, (no_sample, len(specLB)))
-            rand_input = np.reshape(rand_input, (len(specLB), -1))
-            y = sess.run(Y, feed_dict = {self.X:rand_input})
-            valid_x0s.append((rand_input, y))
-        return rand_input, y
 
     def get_ie(self, do_layer: int, target: int, specLB: List[float], specUB: List[float]) -> List[float]:
         rand_input = np.random.uniform(specLB, specUB, (self.no_sample, len(specLB)))
@@ -49,6 +36,5 @@ class Causality:
                     ie.append(avg)
                 mie = np.mean(np.array(ie))
                 res.append(mie)
-        print("Num Node", len(tf.Session().graph._nodes_by_name.keys()))
         
         return res

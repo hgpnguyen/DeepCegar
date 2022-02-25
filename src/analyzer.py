@@ -24,6 +24,8 @@ from zonotope_funcs import *
 from colors import *
 from copy import *
 from enum import Enum
+from ai_milp import milp_callback, create_model
+from gurobipy import *
 
 only_split_not_add_new_task = False
 split_check_time = 0
@@ -35,7 +37,7 @@ class Verified_Result(Enum):
     Unknow = 0
 
 class Analyzer:
-    def __init__(self, ir_list, domain, specnumber):
+    def __init__(self, ir_list, nn, domain, specnumber):
         """
         Arguments
         ---------
@@ -54,17 +56,21 @@ class Analyzer:
         self.man = None
         self.property = None
         self.nr_classes = self.ir_list[-1].output_length
-        self.target_label = -2
+        self.target_label = -1
         self.task_manager = TaskManager()
         self.k = 1
         self.task_manager.setLimit(self.k)
+        self.timeout_lp = config.timeout_lp
+        self.timeout_milp = config.timeout_milp
+        self.nn = nn
+        self.relu_groups = []
 
         if domain == 'deepzono':
             self.man = zonoml_manager_alloc()
             self.is_greater = is_greater_zono
             #self.is_greater_or_equal = is_greater_or_equal_zono
             self.zono_gen = ZonotopeGenerator(self.man)
-        elif domain == 'deeppoly':
+        elif domain == 'deeppoly' or domain == 'refinepoly':
             self.man = fppoly_manager_alloc()
             self.is_greater = is_greater
         else:
@@ -325,7 +331,7 @@ class Analyzer:
             last_status = (i, list_elements[-1], taskhid, task.get_split_neurons())
             this_layer = self.ir_list[i]
             print(back_blue, taskhid.ljust(label_len+(2*i), '┈'), ' data @', i-1, ' ⟿ ⟿  ', this_layer.op().center(6,' '), ' ⟿ ⟿  data @', i, reset, sep='')    
-            element = this_layer.transformer(nn, self.man, element)
+            element = this_layer.transformer(nn, self.man, element, [], [], self.relu_groups, self.refine)
             list_elements.append(element_copy(self.man, self.domain, element, self.ir_list, i, nn))
 
             if debug_mode:
@@ -488,8 +494,95 @@ class Analyzer:
             # max_num_tasks-=1
         return task_verified
 
+    def get_abstract0(self):
+        """
+        processes self.ir_list and returns the resulting abstract element
+        """
+        element = self.ir_list[0].transformer(self.man)
+        nlb = []
+        nub = []
+        for i in range(1, len(self.ir_list)):
+            element_test_bounds = self.ir_list[i].transformer(self.nn, self.man, element, nlb, nub, self.relu_groups, self.refine)
+            element = element_test_bounds
+        if self.domain == "refinepoly":
+            gc.collect()
+        return element, nlb, nub
 
-
+    def analyze_refine(self):
+        #from ai_milp import milp_callback, create_model
+        element, nlb, nub = self.get_abstract0()
+        output_size = 0
+        output_size = self.ir_list[-1].output_length
+        dominant_class = -1
+        self.nn.ffn_counter = 0
+        self.nn.conv_counter = 0
+        self.nn.pool_counter = 0
+        self.nn.concat_counter = 0
+        self.nn.tile_counter = 0
+        self.nn.residual_counter = 0
+        self.nn.activation_counter = 0  
+        counter, var_list, model = create_model(self.nn, self.nn.in_LB, self.nn.in_UB, nlb, nub,self.relu_groups, self.nn.numlayer, config.complete==True)
+        if config.complete==True:
+            model.setParam(GRB.Param.TimeLimit,self.timeout_milp)
+        else:
+            model.setParam(GRB.Param.TimeLimit,self.timeout_lp)
+        num_var = len(var_list)
+        output_size = num_var - counter
+        label_failed = []
+        x = None
+        candidate_labels = []
+        if self.target_label == -1:
+            for i in range(output_size):
+                candidate_labels.append(i)
+        else:
+            candidate_labels.append(self.target_label)
+        adv_labels = []
+        for i in range(output_size):
+            adv_labels.append(i)
+        for i in candidate_labels:
+            flag = True
+            label = i
+            for j in adv_labels:
+                if label!=j and not self.is_greater(self.man, element, label, j, True):
+                    obj = LinExpr()
+                    obj += 1*var_list[counter+label]
+                    obj += -1*var_list[counter + j]
+                    model.setObjective(obj,GRB.MINIMIZE)
+                    if config.complete == True:
+                        model.optimize(milp_callback)
+                        if not hasattr(model,"objbound") or model.objbound <= 0:
+                            flag = False
+                            if self.target_label!=-1:
+                                label_failed.append(j)
+                            if model.solcount > 0:
+                                x = model.x[0:len(self.nn.in_LB)]
+                            break    
+                    else:
+                        model.optimize()
+                        print("objval ", j, model.objval)
+                        if model.Status!=2:
+                            print("model was not successful status is", model.Status)
+                            model.write("final.mps")
+                            flag = False
+                            break
+                        elif model.objval < 0:
+                    
+                            flag = False
+                            if model.objval != math.inf:
+                                x = model.x[0:len(self.nn.in_LB)]
+                            break
+            if flag:
+                    dominant_class = i
+                    break
+        elina_abstract0_free(self.man, element)
+        if dominant_class == self.target_label:
+            is_verified = Verified_Result.Safe
+        else:
+            is_verified = Verified_Result.Unknow
+        model.reset()
+        gc.collect()
+        output_info = (nlb, nub, label_failed, x)
+        return is_verified, output_info
 
 
     ## This function directly return True or False as the final analysis result.
@@ -500,16 +593,19 @@ class Analyzer:
         output: int
             index of the dominant class. If no class dominates then returns -1
         """
-        self.task_manager.init(pid, len(self.ir_list))
-        self.use_abstract_attack = use_abstract_attack
-        self.attack_method = attack_method
-        self.use_abstract_refine = use_abstract_refine 
-        if use_abstract_attack:
-            assert self.concrete_executor, "use abstract_attack must equip the analyzer with a concrete executor ahead"
-            assert self.property, "use abstract_attack must provide the analyzer with desired property"
+        if not self.refine:
+            self.task_manager.init(pid, len(self.ir_list))
+            self.use_abstract_attack = use_abstract_attack
+            self.attack_method = attack_method
+            self.use_abstract_refine = use_abstract_refine 
+            if use_abstract_attack:
+                assert self.concrete_executor, "use abstract_attack must equip the analyzer with a concrete executor ahead"
+                assert self.property, "use abstract_attack must provide the analyzer with desired property"
+                
+            # print('************ analyzebox.analyze ***********')
             
-        # print('************ analyzebox.analyze ***********')
-        
-        is_verified = self.analyze_abstract(specLB, specUB)
-        output_info = (self.task_manager.get_num_all_task(), self.task_manager.get_largest_size())
-        return is_verified, output_info
+            is_verified = self.analyze_abstract(specLB, specUB)
+            output_info = (self.task_manager.get_num_all_task(), self.task_manager.get_largest_size())
+            return is_verified, output_info
+        else:
+            return self.analyze_refine()

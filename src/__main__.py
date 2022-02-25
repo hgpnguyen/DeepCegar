@@ -361,7 +361,7 @@ def main(config):
     print('analysis unsafe ', verified_unsafe_images,'/ ', correctly_classified_images)
     print('Verified images:', verified_test)
     print('Verified unsafe images:', verified_unsafe)
-    print('Total task born:', np.sum(np.array(output_infos)[:,-1]), 'Max task born:', np.max(np.array(output_infos)[:,-1]))
+    #print('Total task born:', np.sum(np.array(output_infos)[:,-1]), 'Max task born:', np.max(np.array(output_infos)[:,-1]))
     return output_infos
 
 def test():
@@ -370,24 +370,28 @@ def test():
                         '5_10', '5_20',
                         '3_40', '5_30',  '4_40', '5_40', '3_50', '4_50', '5_50'
                         ]
-    #data_folder = '../benchmark/mnist_challenge/x_y/'
     model_folder = '../benchmark/cegar/nnet/'
     output_folder = config.output
-    config.start = 98
-    for m in mnist_relu_model[14:]:
-        model_name = 'mnist_tanh_' + m
+    config.output = None
+    config.start = 92
+    config.end = 100
+    config.epsilon = 0.001
+    config.use_abstract_attack = False
+    config.use_abstract_refine = False
+    for m in mnist_relu_model[14:15]:
+        model_name = 'mnist_relu_' + m
         config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
-        assert config.netname, 'a network has to be provided for analysis.'
-        if config.output:
-            eps = str(config.epsilon).split('.')
-            info = 'refine{}_k1_{}_{}'.format(config.domain, eps[0], eps[-1]) if config.use_abstract_attack else '{}_{}_{}'.format(config.domain, eps[0], eps[-1])
-            config.output = '{}/{}_{}.csv'.format(output_folder, model_name, info)
-        start = time.time()
-        main(config)
-        end = time.time()
-        tf.reset_default_graph()
+        filename = '{}/refinepoly_test_{}.csv'.format(output_folder, model_name)
+        config.output = filename
+        if config.dataset:
+            if not config.x_input_dataset:
+                tests = get_tests(config.dataset, config.geometric)
+            else:
+                tests = get_dataset(config.x_input_dataset, config.y_input_dataset)
+        eran = getERAN(config.netname, config.dataset)
+        run(config, eran, tests)
         config.start = 0
-        print("Total run time:", end-start, "seconds")
+        #print("Total run time:", end-start, "seconds")
 
 def find_limit(config, eran, data):
     dataset = config.dataset
@@ -425,9 +429,10 @@ def find_limit(config, eran, data):
             print("img", i, "Verified.")
             output[1] = epsilon
             output[2].append(end-start)
-            output[3].append(output_info[0])
-            if output_info[0] > 2000:
-                return output
+            if domain == "deeppoly":
+                output[3].append(output_info[0])
+                if output_info[0] > 2000:
+                    return output
             #if config.use_abstract_attack:
             #    df = pd.read_csv(config.output)
             #    df.loc[df['Testcase'] == i, 'RefinePoly limit'] = epsilon
@@ -499,14 +504,20 @@ def run(config, eran, tests):
         output[1] = deeppoly_out[1] if deeppoly_out[1] != -1 or config.epsilon == 0.001 else config.epsilon
         output[2] = output[1]
 
-        config.epsilon = deeppoly_out[1] + 0.001       
-        config.use_abstract_attack = True
-        config.use_abstract_refine = True
-        refine_out = find_limit(config, eran, data)
-        output[2] = refine_out[1] if refine_out[1] != -1 else output[1]
-        output[3] = refine_out[2]
-        output[4] = refine_out[3]
-        add_row_to_file(filename, output, ['Testcase', 'DeepPoly limit', 'RefinePoly limit', 'Refine time', 'Refine numtask'])
+        if config.domain == "deeppoly":
+            config.epsilon = deeppoly_out[1] + 0.001       
+            config.use_abstract_attack = True
+            config.use_abstract_refine = True
+            refine_out = find_limit(config, eran, data)
+            output[2] = refine_out[1] if refine_out[1] != -1 else output[1]
+            output[3] = refine_out[2]
+            output[4] = refine_out[3]
+            #add_row_to_file(filename, output, ['Testcase', 'DeepPoly limit', 'RefinePoly limit', 'Refine time', 'Refine numtask'])
+        elif config.domain == "refinepoly":
+            output[2] = deeppoly_out[2]
+            output.pop(-1)
+            output.pop(-1)
+            add_row_to_file(filename, output, ['Testcase','RefinePoly limit', 'Refine time'])
 
 
         config.epsilon = 0.001
@@ -636,8 +647,8 @@ if __name__ == "__main__":
 
     #main(config)
 
-    #test()
-    newTest()
+    test()
+    #newTest()
     #filtr = tracemalloc.Filter(inclusive=True, filename_pattern='*analyzer.py')
     #snapshot = snapshot.filter_traces([filtr])    
 

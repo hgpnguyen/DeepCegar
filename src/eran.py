@@ -87,16 +87,14 @@ class ERAN:
         specLB = np.reshape(specLB, (-1,))
         specUB = np.reshape(specUB, (-1,))
         nn = Layers(specLB, specUB)
-        nn.specLB = specLB
-        nn.specUB = specUB
         if domain == 'deepzono' or domain == 'refinezono':
             #if self.abstract_deepzono_analyzer is None:
             execute_list, output_info = self.optimizer.get_deepzono(nn,specLB, specUB)
-            self.abstract_deepzono_analyzer = Analyzer(execute_list, domain, specnumber)
+            self.abstract_deepzono_analyzer = Analyzer(execute_list, nn, domain, specnumber)
             return self.abstract_deepzono_analyzer
         elif domain == 'deeppoly' or domain == 'refinepoly':
             execute_list, output_info = self.optimizer.get_deeppoly(nn,specLB, specUB)
-            self.abstract_deeppoly_analyzer = Analyzer(execute_list, domain, specnumber)
+            self.abstract_deeppoly_analyzer = Analyzer(execute_list, nn, domain, specnumber)
             return self.abstract_deeppoly_analyzer
         # elif domain == 'deepbox' or domain == 'refinebox':
         #     if self.abstract_deepbox_analyzer is None:
