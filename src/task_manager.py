@@ -24,9 +24,9 @@ class TaskManager:
         self.largest_size = 0
         
         
-    def add_task(self, start_ir, element, nn, parent_hid, partition_no, neurons):
+    def add_task(self, start_ir, element, nn, parent_hid, partition_no, neurons, relu_groups):
         self.cid += 1
-        self.last_task = Task.create(self.pid, self.cid, start_ir, element, nn, parent_hid, partition_no, neurons)
+        self.last_task = Task.create(self.pid, self.cid, start_ir, element, nn, parent_hid, partition_no, neurons, relu_groups)
         self.tasks[start_ir].append(self.last_task)
         self.task_sizes[start_ir] += 1
         self.total_size += 1

@@ -8,7 +8,7 @@ from elina_abstract0 import elina_abstract0_free
 gid = 0
 
 class Task:
-    def __init__(self, pid, tid, start_ir, element, nn, hid, neurons = {}):
+    def __init__(self, pid, tid, start_ir, element, nn, hid, neurons = {}, relu_groups = None):
         # if nn is None:
         #     nn = Layers()
         global gid
@@ -20,12 +20,14 @@ class Task:
         self.nn = nn
         self.hid = str(hid)
         self.split_neurons = neurons 
-        
+        if not relu_groups:
+            relu_groups = []
+        self.relu_groups = relu_groups
     
     @staticmethod
-    def create(pid, tid, start_ir, element, nn, parent_hid, partition_no, neurons):
+    def create(pid, tid, start_ir, element, nn, parent_hid, partition_no, neurons, relu_groups):
         hid = parent_hid + '⡇' + str(partition_no)
-        created = Task(pid, tid, start_ir, element, nn, hid, neurons)
+        created = Task(pid, tid, start_ir, element, nn, hid, neurons, relu_groups)
         return created
     
     

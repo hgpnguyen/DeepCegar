@@ -5,18 +5,20 @@ import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
 
 class Causality:
-    def __init__(self, executor: Executor) -> None:
+    def __init__(self, executor: Executor, target: int) -> None:
         self.ir_list = executor.ir_list
         self.exe = executor
         self.no_sample = 3000
         #self.x0, self.output_x0 = self.gen_x0()
         self.y0s = [None] * len(executor.ir_list)
+        self.target = target
 
-    def get_ie(self, do_layer: int, target: int, specLB: List[float], specUB: List[float]) -> List[float]:
+    def get_ie(self, do_layer: int, specLB: List[float], specUB: List[float]) -> List[float]:
         rand_input = np.random.uniform(specLB, specUB, (self.no_sample, len(specLB)))
         rand_input = np.reshape(rand_input, (len(specLB), -1))
         ie, num_step = [], 16
         res = []
+        target = self.target
         if self.y0s[do_layer] is None:
             x = tf.placeholder(tf.float64, (len(specLB), self.no_sample))
             y = self.exe.get_parametric_model(do_layer, x)

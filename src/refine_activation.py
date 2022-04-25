@@ -31,7 +31,7 @@ else:
     from fppoly_gpu import *
 
 
-def refine_activation_with_solver_bounds(nn, self, man, element, nlb, nub, relu_groups, timeout_lp, timeout_milp, use_default_heuristic, domain):
+def refine_activation_with_solver_bounds(nn, self, man, element, nlb, nub, relu_groups, timeout_lp, timeout_milp, use_default_heuristic, domain, use_krelu=True):
     """
     refines the relu transformer
 
@@ -54,6 +54,8 @@ def refine_activation_with_solver_bounds(nn, self, man, element, nlb, nub, relu_
      the updated abstract element
     """
     layerno = nn.calc_layerno()
+    #print("Layer num", layerno)
+    #print("predecessor", nn.predecessors)
     predecessor_index = nn.predecessors[layerno+1][0] - 1
     if domain == 'deepzono':
         offset, length = self.abstract_information
@@ -81,7 +83,8 @@ def refine_activation_with_solver_bounds(nn, self, man, element, nlb, nub, relu_
                 element = tanh_zono_layerwise(man, True, element, offset, length)
             return element
         else:
-            encode_kactivation_cons(nn, man, element, offset, predecessor_index, length, lbi, ubi,
+            if use_krelu:
+                encode_kactivation_cons(nn, man, element, offset, predecessor_index, length, lbi, ubi,
                                     relu_groups, False, 'refinepoly', nn.layertypes[layerno])
             if nn.layertypes[layerno] == 'ReLU':
                 handle_relu_layer(*self.get_arguments(man, element), use_default_heuristic)
@@ -130,7 +133,8 @@ def refine_activation_with_solver_bounds(nn, self, man, element, nlb, nub, relu_
             if config.refine_neurons:
                 for j in indices:
                     update_bounds_for_neuron(man,element,predecessor_index,j,resl[j],resu[j])
-            encode_kactivation_cons(nn, man, element, offset, predecessor_index, length, lbi, ubi,
+            if use_krelu:
+                encode_kactivation_cons(nn, man, element, offset, predecessor_index, length, lbi, ubi,
                                     relu_groups, False, 'refinepoly', nn.layertypes[layerno])
             if nn.layertypes[layerno] == 'ReLU':
                 handle_relu_layer(*self.get_arguments(man, element), use_default_heuristic)

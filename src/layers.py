@@ -2,8 +2,8 @@
 @author: LI Jiaying
 '''
 
-
 class Layers:
+
     def __init__(self, specLB, specUB):
         self.layertypes = []
         self.weights = []
@@ -32,6 +32,35 @@ class Layers:
         self.in_LB = specLB
         self.in_UB = specUB
         self.last_layer = None
+    
+    def copy(self, layers:'Layers') -> None:
+        self.layertypes = layers.layertypes.copy()
+        self.weights = layers.weights.copy()
+        self.biases = layers.biases.copy()
+        self.filters = layers.filters.copy()
+        self.numfilters = layers.numfilters.copy()
+        self.filter_size = layers.filter_size.copy()
+        self.input_shape = layers.input_shape.copy()
+        self.strides = layers.strides.copy()
+        self.padding = layers.padding.copy()
+        self.out_shapes = layers.out_shapes.copy()
+        self.pool_size = layers.pool_size.copy()
+        self.numlayer = 0
+        self.ffn_counter = 0
+        self.conv_counter = 0
+        self.residual_counter = 0
+        self.pool_counter = 0
+        self.concat_counter = 0
+        self.tile_counter = 0
+        self.activation_counter = 0
+        self.specLB = layers.specLB.copy()
+        self.specUB = layers.specUB.copy()
+        self.original = layers.original.copy()
+        self.zonotope = layers.zonotope.copy()
+        self.predecessors = layers.predecessors.copy()
+        self.in_LB = layers.in_LB.copy()
+        self.in_UB = layers.in_UB.copy()
+        self.last_layer = layers.last_layer   
 
 
     def calc_layerno(self):

@@ -20,8 +20,8 @@ from ctypes.util import *
 from layers import *
 from poly import *
 
-debug_mode = False
-#debug_mode = True
+#debug_mode = False
+debug_mode = True
 
 libc = CDLL(find_library('c'))
 printf = libc.printf
@@ -200,22 +200,25 @@ def element_copy(man, domain, element, ir_list, stop, nn):
     if domain == "deepzono":
         return elina_abstract0_copy(man, element)
     else:
+        #copy = elina_abstract0_copy(man, element)
         return poly_copy(man, ir_list, stop, nn, refine)
 
 def poly_copy(man, ir_list, stop, nn, refine):
     assert stop <= len(ir_list)
     element = ir_list[0].transformer(man)
     new_nn = Layers(nn.in_LB, nn.in_UB)
+    new_nn.copy(nn)
+    nlb_, nub_, relu_groups = [], [], []
     for i in range(1, stop + 1):
-        element = ir_list[i].transformer(new_nn, man, element, [], [], [], refine)
+        element = ir_list[i].transformer(new_nn, man, element, nlb_, nub_, relu_groups, False)
         lb , ub = poly_bound(man, element, i-1)
         nlb, nub = nn.specLB[i-1], nn.specUB[i-1]
         assert len(lb) == len(nlb) and len(ub) == len(nub)
         for j in range(len(lb)):
             if lb[j] != nlb[j] or ub[j] != nub[j]:
                 update_bounds_for_neuron(man, element, i-1, j, nlb[j], nub[j])
-                new_nn.specLB[-1][j] = nlb[j]
-                new_nn.specUB[-1][j] = nub[j]    
+                #new_nn.specLB[-1][j] = nlb[j]
+                #new_nn.specUB[-1][j] = nub[j]    
     return element, new_nn
 
 def zonotope_dim_split_check(man, z0, z1, dim, split):

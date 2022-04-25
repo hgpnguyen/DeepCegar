@@ -96,17 +96,6 @@ class ERAN:
             execute_list, output_info = self.optimizer.get_deeppoly(nn,specLB, specUB)
             self.abstract_deeppoly_analyzer = Analyzer(execute_list, nn, domain, specnumber)
             return self.abstract_deeppoly_analyzer
-        # elif domain == 'deepbox' or domain == 'refinebox':
-        #     if self.abstract_deepbox_analyzer is None:
-        #         execute_list, output_info = self.optimizer.get_deepbox()
-        #         self.abstract_deepbox_analyzer = Analyzer(execute_list, domain, specnumber)
-        #     return self.abstract_deepbox_analyzer
-        # elif domain == 'powerset@box' or domain == 'powerset@zonotope':
-        #     # subdomain = domain[9:]
-        #     if self.abstract_powerset_analyzer is None:
-        #         execute_list, output_info = self.optimizer.get_powerset()
-        #         self.abstract_powerset_analyzer = Analyzer(execute_list, domain, specnumber)
-        #     return self.abstract_powerset_analyzer
         else:
             assert 0
     

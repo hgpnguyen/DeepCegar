@@ -114,14 +114,14 @@ class Analyzer:
             self.abstract_attacker = AbstractDomainAttack(self.concrete_executor)
             self.abstract_attacker.target_at_property(self.property)
         if self.causality is None:
-            self.causality = Causality(self.concrete_executor)
+            self.causality = Causality(self.concrete_executor, self.target_label)
             
         if debug_mode:
             print('target property:', self.property)
             # elina_abstract0_simple_print(self.man, element)
         print(' |-attack....', end='')
 
-        assert self.domain == 'deepzono' or  self.domain == 'deeppoly'
+        assert self.domain in ['deepzono', 'deeppoly', 'refinepoly']
         attack_mode = 'generator'
         if self.domain == "deepzono":
             vars, matrix, bias = self.zono_gen.get_generator(element)
@@ -170,6 +170,7 @@ class Analyzer:
         print(' **cross_0_indicies:', all_indicies, reset)
 
         if strategy == 'grad_and_scale':
+            print("GRAD AND SCALE")
             ranked_list = sorted(all_indicies, key=lambda s: abs(grad[s])*(ub[s]-lb[s]))
         elif strategy == 'lb_similar_with_ub_first':
             # idea: if lb=ub, then the interval is even span across 0.0. Then we split the interval can drop more area
@@ -177,6 +178,7 @@ class Analyzer:
             all_indicies = [i for i in all_indicies if ub[i]!=lb[i]]
             ranked_list = sorted(all_indicies, key=lambda s: (-lb[s]*ub[s])/((ub[s]-lb[s])**2))
         elif strategy == 'causality':
+            print("CAUSALITY")
             ranked_list = sorted(all_indicies, key=lambda s: causality[s])
         elif strategy == 'grad_larger_first':
             ranked_list = sorted(all_indicies, key=lambda s: abs(grad[s]))
@@ -203,7 +205,7 @@ class Analyzer:
         
         
 
-    def refine_abstract_domain(self, attack_result, layer_no, element, parent_hid, neurons):
+    def refine_abstract_domain(self, attack_result, layer_no, element, parent_hid, neurons, relu_groups):
         if self.domain == "deepzono":
             nn = None
         else:
@@ -213,8 +215,9 @@ class Analyzer:
             print(gray, bold, 'refine the last domain: ', nonbold, reset, end='')
             debug_info_print(self.man, element, self.domain, layer_no-2, 'to refine')
 
-        causal = self.causality.get_ie(layer_no, self.target_label, lb, ub)
-        attack_result.causality = causal
+        if config.strategy == "causality":
+            causal = self.causality.get_ie(layer_no, lb, ub)
+            attack_result.causality = causal
 
         # print(' - on refine -')
         # ir_class = type(self.ir_list[layer]).__name__
@@ -236,7 +239,7 @@ class Analyzer:
                 # print('[RELU refine] (s-splitting) Can not refine the domain via splitting only one dimension due to no negative y coordinate.')
                 # split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'grad_larger_first', lb, ub, is_relu=True)
                 #split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'grad_and_scale', neurons, lb, ub, is_relu=True)
-                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'causality', neurons, lb, ub, is_relu=True)
+                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, config.strategy, neurons, lb, ub, is_relu=True)
                 if len(split_dims) == 0:
                     print('Relu approximation is already eliminated. Since attack succeeds, over-approximation must be happened in the last layer. Should back propagate!')
                     return False
@@ -249,7 +252,7 @@ class Analyzer:
             else: # elif is_tanh or is_sigmoid:
                 print('   |-refine [operation:Tanh/Sigmoid, action: s-splitting].')
                 #split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'output_smaller_first', neurons, lb, ub)
-                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, 'causality', neurons, lb, ub)
+                split_dims = self.get_first_k_dimensions_to_split(attack_result, k, config.strategy, neurons, lb, ub)
                 if len(split_dims) == 0:
                     return False
                 for dim in split_dims:
@@ -260,11 +263,11 @@ class Analyzer:
             refined_elements = abstract_split(self.man, self.domain, element, self.ir_list, nn, k, split_dims, split_values)    
             print('      |-split the dim', split_dims, 'into', len(refined_elements), 'subtasks: ') # , end='')
             for i, e in enumerate(refined_elements):
-                if self.domain == "deeppoly":
-                    e, new_nn = e[0], e[1]
-                else:
+                if self.domain == "deepzono":
                     new_nn = None
-                self.task_manager.add_task(layer_no, e, new_nn, parent_hid, i, neurons.copy())
+                else:
+                    e, new_nn = e[0], e[1]
+                self.task_manager.add_task(layer_no, e, new_nn, parent_hid, i, neurons.copy(), relu_groups.copy())
                 print(yellow, '         |->', i, ')', self.task_manager.last_task, reset, sep='', end=' ') 
                 if debug_mode:
                     debug_info_print(self.man, e, self.domain, layer_no-2, 'splitted', end='')
@@ -319,6 +322,7 @@ class Analyzer:
         element = task.element
         taskhid = task.get_hid()
         nn = task.nn
+        relu_groups = task.relu_groups.copy()
         #list_elements = [zonotope_deepcopy(self.man, element)]
         if self.domain == "deepzono":
             task.element, task.nn = element_copy(self.man, self.domain, element, self.ir_list, i-1, nn), None
@@ -327,11 +331,13 @@ class Analyzer:
         list_elements = [element_copy(self.man, self.domain, element, self.ir_list, i-1, nn)] 
         # print('* Given abstraction (before layer', i, '): ', sep='', end='')
         #zono_debug_info_print(self.man, element, '↓in')
+        use_krelu = not self.relu_groups
         while i<len(self.ir_list):
-            last_status = (i, list_elements[-1], taskhid, task.get_split_neurons())
+            last_status = (i, list_elements[-1], taskhid, task.get_split_neurons(), relu_groups.copy())
             this_layer = self.ir_list[i]
             print(back_blue, taskhid.ljust(label_len+(2*i), '┈'), ' data @', i-1, ' ⟿ ⟿  ', this_layer.op().center(6,' '), ' ⟿ ⟿  data @', i, reset, sep='')    
-            element = this_layer.transformer(nn, self.man, element, [], [], self.relu_groups, self.refine)
+            element = this_layer.transformer(nn, self.man, element, nn.specLB, nn.specUB, self.relu_groups, self.refine, use_krelu)
+            #print("ReLu group:", self.relu_groups)
             list_elements.append(element_copy(self.man, self.domain, element, self.ir_list, i, nn))
 
             if debug_mode:
@@ -339,9 +345,7 @@ class Analyzer:
                 debug_info_print(self.man, element, self.domain, i-1, 'out')
                 #poly_split(self.man, element, self.ir_list, nn, 1, [1])
 
-
             if self.use_abstract_attack and this_layer.op() in ['Relu', 'Sigmoid', 'Tanh'] and refine and self.attack_condition(task, i, 3):
-
                 attack_result = self.attack_abstract_domain(i + 1, element)
                 if attack_result.success:
                     #new_layer = self.weak_traceback(i, attack_result, list_elements)
@@ -350,7 +354,7 @@ class Analyzer:
                         print("Counterexample found for the input layer, and thus the property does not hold. This task fails.")
                         elina_abstract0_free(self.man, element)
                         for e in list_elements:
-                            if self.domain == "deeppoly":
+                            if self.domain == "deeppoly" or self.domain == "refinepoly":
                                 e = e[0]
                             elina_abstract0_free(self.man, e)
                         gc.collect()
@@ -358,7 +362,7 @@ class Analyzer:
                     elif new_layer != i:
                         if new_layer == task.start_ir-1:
                             new_layer += 1
-                        last_status = (new_layer, list_elements[new_layer-task.start_ir], taskhid, task.get_split_neurons())
+                        last_status = (new_layer, list_elements[new_layer-task.start_ir], taskhid, task.get_split_neurons(), relu_groups.copy())
                         attack_result = self.update_attack_result(new_layer+1, list_elements[new_layer-task.start_ir+1], attack_result)
  
 
@@ -371,25 +375,32 @@ class Analyzer:
                             return False  # in this case, we can not refine the domain any more, and thus return false
                     elina_abstract0_free(self.man, element)
                     for e in list_elements:
-                        if self.domain == "deeppoly":
+                        if self.domain == "deeppoly" or self.domain == "refinepoly":
                             e = e[0]
                         elina_abstract0_free(self.man, e)
                     gc.collect()
                     return None
             i+=1
         
-
+        counter, var_list, model = create_model(nn, nn.in_LB, nn.in_UB, nn.specLB, nn.specUB, self.relu_groups, nn.numlayer, config.complete==True)
         cprint(back_blue, taskhid.ljust(label_len+(2*i), '┈'), ' data @', i-1, ' ⟿ ⟿  Compare ⟿ ⟿  ', reset, sep='', end='')
         dominant_class = -1
-        for i in range(self.nr_classes):
-            flag = True	
+        label_failed = []
+        candidate_labels = []
+        if self.target_label == -1:
+            candidate_labels = list(range(self.nr_classes))
+        else:
+            candidate_labels.append(self.target_label)
+        for i in candidate_labels:
+            flag = True
+            label = i
             # if i is the label, then i!=j ==> element[i]>element[j]
             for j in range(self.nr_classes):
                 if(self.domain == "deepzono"):
                     args = (self.man, element, i, j)
                 else:
                     args = (self.man, element, i, j, True) 
-                if i!=j and not self.is_greater(*args):	
+                if i!=j and not self.is_greater(*args):
                     flag = False	
                     break
             if flag:	
@@ -397,7 +408,7 @@ class Analyzer:
                 break
         elina_abstract0_free(self.man, element)
         for e in list_elements:
-            if self.domain == "deeppoly":
+            if self.domain == "deeppoly" or self.domain == "refinepoly":
                 e = e[0]
             elina_abstract0_free(self.man, e)
         gc.collect()
@@ -450,18 +461,17 @@ class Analyzer:
             sys.exit(0)
         
         layer_no=1
-        nn = Layers(specLB, specUB)
-        if self.use_abstract_attack: # this is a shortcut for early termination
-            attack_result = self.attack_abstract_domain(layer_no, element)
+        #if self.use_abstract_attack: # this is a shortcut for early termination
+        #    attack_result = self.attack_abstract_domain(layer_no, element)
             #print("Debug")
             #debug_info_print(self.man, element, self.domain, 0)
-            if attack_result.success:
+        #    if attack_result.success:
                 #dominant_class, nb = self.concrete_executor.forward(attack_result.x)
                 #print("Dominent class", dominant_class, check_in_bound(attack_result.x, [specLB, specUB]))
-                print('Counterexample found for the input layer, and thus the property does not hold. This task fails.')
-                return Verified_Result.UnSafe
+        #       print('Counterexample found for the input layer, and thus the property does not hold. This task fails.')
+        #        return Verified_Result.UnSafe
         
-        self.task_manager.add_task(layer_no, element, nn, '', '◈', set())
+        self.task_manager.add_task(layer_no, element, self.nn, '', '◈', set(), self.relu_groups)
                 
         ### SCHEDULE AND RUN THE TASKS ###
         task_verified = Verified_Result.Safe
@@ -476,7 +486,10 @@ class Analyzer:
             status = self.analyze_task(this_task, False)
             if not status and self.use_abstract_attack and self.task_manager.size() < 450 and self.task_manager.cid < 5000:
                 print(lgreen, bold, "\nFailed. Starting to attack and refine. \n", nonbold, reset)
+                timeout_lp, timeout_milp = config.timeout_lp, config.timeout_milp
+                config.timeout_lp, config.timeout_milp = 1, 1
                 status = self.analyze_task(this_task, True)
+                config.timeout_lp, config.timeout_milp = timeout_lp, timeout_milp
             this_task.destroy(self.man)
             
             if status is None:
@@ -501,6 +514,8 @@ class Analyzer:
         element = self.ir_list[0].transformer(self.man)
         nlb = []
         nub = []
+        self.causality = Causality(self.concrete_executor, self.target_label)
+        #self.causality = None
         for i in range(1, len(self.ir_list)):
             element_test_bounds = self.ir_list[i].transformer(self.nn, self.man, element, nlb, nub, self.relu_groups, self.refine)
             element = element_test_bounds
@@ -572,8 +587,8 @@ class Analyzer:
                                 x = model.x[0:len(self.nn.in_LB)]
                             break
             if flag:
-                    dominant_class = i
-                    break
+                dominant_class = i
+                break
         elina_abstract0_free(self.man, element)
         if dominant_class == self.target_label:
             is_verified = Verified_Result.Safe
@@ -593,7 +608,7 @@ class Analyzer:
         output: int
             index of the dominant class. If no class dominates then returns -1
         """
-        if not self.refine:
+        if self.refine or self.domain=="deeppoly":
             self.task_manager.init(pid, len(self.ir_list))
             self.use_abstract_attack = use_abstract_attack
             self.attack_method = attack_method

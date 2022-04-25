@@ -112,7 +112,7 @@ class AbstractDomainAttack:
                 for i, e in enumerate(es):
                     lb[es[i]] = elb[i]
                     ub[es[i]] = eub[i]
-            elif domain == "deeppoly":
+            elif domain == "deeppoly" or domain == "refinepoly":
                 self.matrix, self.bias, xlb, xub = args
                 lb, ub = xlb, xub
                 

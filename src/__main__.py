@@ -373,12 +373,12 @@ def test():
     model_folder = '../benchmark/cegar/nnet/'
     output_folder = config.output
     config.output = None
-    config.start = 92
+    config.start = 0
     config.end = 100
-    config.epsilon = 0.001
+    config.epsilon = 0.01
     config.use_abstract_attack = False
     config.use_abstract_refine = False
-    for m in mnist_relu_model[14:15]:
+    for m in mnist_relu_model[0:15]:
         model_name = 'mnist_relu_' + m
         config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
         filename = '{}/refinepoly_test_{}.csv'.format(output_folder, model_name)
@@ -393,15 +393,18 @@ def test():
         config.start = 0
         #print("Total run time:", end-start, "seconds")
 
-def find_limit(config, eran, data):
+def find_limit(config, eran, data, step=0.008):
     dataset = config.dataset
     domain = config.domain
     i, image, target_label, means, stds, is_trained_with_pytorch = data
-    epsilon = config.epsilon
+    epsilon = config.epsilon + step
     stop = True
+    minFail = 2
     output = [i, -1, [], []]
-    
+    temp = Verified_Result.Unknow
+    limit = time.time()
     while stop and epsilon <=1:
+        print("EPSILON:", epsilon)
         if(dataset=='mnist'):
             specLB = np.clip(image - epsilon,0,1)
             specUB = np.clip(image + epsilon,0,1)
@@ -422,9 +425,12 @@ def find_limit(config, eran, data):
         sys.stdout.flush()
         
         start = time.time()
-        is_verified, output_info = eran.analyze_box(specLB, specUB, domain, problem_id=i, use_abstract_attack=config.use_abstract_attack, attack_method=config.attack_method, use_abstract_refine=config.use_abstract_refine, target_label=target_label)
+        if epsilon == minFail:
+            is_verified = temp
+        else:
+            is_verified, output_info = eran.analyze_box(specLB, specUB, domain, problem_id=i, use_abstract_attack=config.use_abstract_attack, attack_method=config.attack_method, use_abstract_refine=config.use_abstract_refine, target_label=target_label)
         end = time.time()
-        stop = is_verified == Verified_Result.Safe
+        stop = is_verified == Verified_Result.Safe or step > 0.001
         if is_verified == Verified_Result.Safe:
             print("img", i, "Verified.")
             output[1] = epsilon
@@ -433,20 +439,36 @@ def find_limit(config, eran, data):
                 output[3].append(output_info[0])
                 if output_info[0] > 2000:
                     return output
-            #if config.use_abstract_attack:
-            #    df = pd.read_csv(config.output)
-            #    df.loc[df['Testcase'] == i, 'RefinePoly limit'] = epsilon
-            #    df.loc[df['Testcase'] == i, 'Refine time'] = str(output[2])
-            #    df.loc[df['Testcase'] == i, 'Refine numtask'] = str(output[3])
-            #    df.to_csv(config.output, index=False)
-
         elif is_verified == Verified_Result.Unknow:
             print("img", i, "Failed (may false negative, as abstract interpretation is only sound)")
-        else:
+            minFail = min(minFail, epsilon)
+            temp = Verified_Result.Unknow
+            epsilon -= step
+            step = step / 2
+            if step <= 0.002:
+                step = 0.001
+        elif is_verified == Verified_Result.UnSafe:
             print("img", i, "Verified as Unsafe")
+            minFail = min(minFail, epsilon)
+            temp = Verified_Result.UnSafe
+            epsilon -= step
+            step = step / 2
+            if step <= 0.002:
+                step = 0.001
+        else:
+            print("img", i, "Something Else")
+            minFail = min(minFail, epsilon)
+            temp = is_verified
+            epsilon -= step
+            step = step / 2
+            if step <= 0.002:
+                step = 0.001
 
         print(end - start, "seconds")
-        epsilon += 0.001
+        epsilon += step
+        if time.time() - limit > 7200:
+            break
+    output.append(is_verified)
     return output
 
 def run(config, eran, tests):
@@ -514,13 +536,26 @@ def run(config, eran, tests):
             output[4] = refine_out[3]
             #add_row_to_file(filename, output, ['Testcase', 'DeepPoly limit', 'RefinePoly limit', 'Refine time', 'Refine numtask'])
         elif config.domain == "refinepoly":
-            output[2] = deeppoly_out[2]
-            output.pop(-1)
-            output.pop(-1)
-            add_row_to_file(filename, output, ['Testcase','RefinePoly limit', 'Refine time'])
+            config.epsilon = deeppoly_out[1]
+            #output = [i, -1, -1, -1, [], [], []]
+            output[1] = deeppoly_out[1] 
+            output[3] = deeppoly_out[2]
+            config.use_abstract_attack = True
+            config.use_abstract_refine = True
+            config.strategy = 'causality'
+            refine_out_1 = find_limit(config, eran, data, 0.004)
+            output[2] = refine_out_1[1] if refine_out_1[1] != -1 else output[1]
+            output[4] = refine_out_1[2]
+            config.strategy = 'causality'
+            #refine_out_2 = find_limit(config, eran, data, 0.004)
+            #output[3] = refine_out_2[1] if refine_out_2[1] != -1 else output[1]
+            #output[6] = refine_out_2[2]
+            #add_row_to_file(filename, output, ['Testcase','RefinePoly limit', 'RefineCegar', 'RefineCegar_cau' , 'RefineP time', "RefineC time", "RefineC_cau time"])
+            #config.strategy = 'grad_and_scale'
+            add_row_to_file(filename, output, ['Testcase','RefinePoly limit', 'RefineCegar_cau' , 'RefineP time', "RefineC_cau time"])
 
 
-        config.epsilon = 0.001
+        config.epsilon = 0.000
         config.use_abstract_attack = False
         config.use_abstract_refine = False
         start = 0
@@ -581,15 +616,16 @@ def newTest():
     model_folder = '../benchmark/cegar/nnet/'
     output_folder = config.output
     config.output = None
-    config.start = 0
-    config.end = min(config.start + 25, 100)
-    config.epsilon = 0.001
+    #config.start = 0
+    #config.end = 100
+    config.epsilon = 0.000
     config.use_abstract_attack = False
     config.use_abstract_refine = False
-    for m in mnist_relu_model[12:]:
-        model_name = 'mnist_sigmoid_' + m
+    config.refine_neurons = True
+    for m in mnist_relu_model[0:1]:
+        model_name = 'mnist_relu_' + m
         config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
-        filename = '{}/causality_test_{}.csv'.format(output_folder, model_name)
+        filename = '{}/refine_causal_test_{}.csv'.format(output_folder, model_name)
         config.output = filename
         if config.dataset:
             if not config.x_input_dataset:
@@ -598,17 +634,109 @@ def newTest():
                 tests = get_dataset(config.x_input_dataset, config.y_input_dataset)
         eran = getERAN(config.netname, config.dataset)
         run(config, eran, tests)
-        while config.end < 100:
-            config.start = config.end
-            config.end = min(config.start + 25, 100)
-            tf.reset_default_graph()
-            eran = getERAN(config.netname, config.dataset)
-            run(config, eran, tests)
-        config.start = 0
-        config.end = 25 
         tf.reset_default_graph()
 
+def get_eps_limit(filename):
+    with open(filename) as csv_file:
+        reader = csv.reader(csv_file, delimiter=',')
+        eps_limit = {}
+        next(reader)
+        for row in reader:
+            eps_limit[int(row[0])] = float(row[1])
+            #print(row[0], eps_limit[int(row[0])])
+    return eps_limit
 
+def run_temp(config, eran, tests, eps_limit):
+    netname = config.netname
+    _, file_extension = os.path.splitext(netname)
+    is_trained_with_pytorch = file_extension==".pyt"
+    is_onnx = file_extension == ".onnx"
+    is_trained_with_pytorch = is_trained_with_pytorch or is_onnx
+    dataset = config.dataset
+    filename = config.output
+
+    if not is_trained_with_pytorch:
+        means = [0]
+        stds = [1]
+    if config.mean:
+        means = config.mean
+    if config.std:
+        stds = config.std
+    epsilon = config.epsilon
+    assert (epsilon >= 0) and (epsilon <= 1), "epsilon can only be between 0 and 1"
+
+    
+    start = config.start
+    for i, test in enumerate(tests[start:config.end], start):
+        output = [i, -1, -1, [], []]
+        if(dataset=='mnist') and not config.x_input_dataset:
+            image= np.float64(test[1:len(test)])/np.float64(255)
+        elif(dataset=='test') or config.x_input_dataset:
+            image=np.float64(test[1:len(test)])
+                
+        if i>0:
+            print ('\n'*3)
+        print(lgreen, '‣'*56, ' test ', i, ' ', '‣'*56, reset, sep='')
+        print('#'*37, 'concrete model evaluation', '#'*36)
+        normalized_image = np.reshape(np.copy(image), (-1))
+        if is_trained_with_pytorch:
+            normalize(normalized_image, means, stds, dataset, False)
+        target_label = int(test[0])
+        print('==> target label: ', target_label)
+        
+        cstart = time.time()
+        is_verified, dominant_class = eran.analyze_box(normalized_image, normalized_image, 'concrete', target_label=target_label)
+        cend = time.time()
+        if not is_verified:
+            print("img",i,"not considered, correct_label", target_label, "classified label ", dominant_class)
+            continue
+        print("img", i, "concretely labeled correctly")
+        print("time ", cend - cstart, ' seconds\n\n')
+
+        
+        print('#'*38, 'abstract interpretation', '#'*37)
+        sys.stdout.flush()
+        data = (i, image, target_label, means, stds, is_trained_with_pytorch)
+        config.use_abstract_attack = True
+        config.use_abstract_refine = True
+        config.strategy = 'causality'
+        config.epsilon = eps_limit[i]
+        output[1] = eps_limit[i]
+        deeppoly_out = find_limit(config, eran, data, 0.004)
+        output[2] = deeppoly_out[1] if deeppoly_out[1] != -1 else eps_limit[i]
+        output[4] = deeppoly_out[2]
+        output.append(deeppoly_out[-1])
+
+        add_row_to_file(filename, output, ['Testcase','RefinePoly limit', 'RefineCegar_cau' , 'RefineP time', "RefineC_cau time"])
+
+
+def temp():
+    mnist_relu_model = ['3_10', '3_20', '3_30', 
+                        '4_10', '4_20', '4_30',
+                        '5_10', '5_20',
+                        '3_40', '5_30',  '4_40', '5_40', '3_50', '4_50', '5_50'
+                        ]
+    model_folder = '../benchmark/cegar/nnet/'
+    output_folder = config.output
+    config.output = None
+    #config.start = 25
+    #config.end = 26
+    #config.use_abstract_attack = False
+    #config.use_abstract_refine = False
+    for m in mnist_relu_model[:1]:
+        model_name = 'mnist_relu_' + m
+        config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
+        filename = '../experiment/raw/refinepoly_test/refinepoly_test_{}.csv'.format(model_name)
+        eps_limit = get_eps_limit(filename)
+        config.output =  '{}/refine_causal_test_{}.csv'.format(output_folder, model_name)
+        if config.dataset:
+            if not config.x_input_dataset:
+                tests = get_tests(config.dataset, config.geometric)
+            else:
+                tests = get_dataset(config.x_input_dataset, config.y_input_dataset)
+        eran = getERAN(config.netname, config.dataset)
+        run_temp(config, eran, tests, eps_limit)
+        tf.reset_default_graph()
     
 
 
@@ -635,6 +763,9 @@ if __name__ == "__main__":
     parser.add_argument('--x_input_dataset', type=str, default=config.x_input_dataset, help='Input x dateset location')
     parser.add_argument('--y_input_dataset', type=str, default=config.y_input_dataset, help='Input y dateset location')
     parser.add_argument('--output', type=str, default=config.output, help='Output folder')
+    parser.add_argument('--start', type=int, default=0, help='Start testcase')
+    parser.add_argument('--end', type=int, default=100, help='End testcase')
+
 
     # Logging options
     parser.add_argument('--logdir', type=str, default=None, help='Location to save logs to. If not specified, logs are not saved and emitted to stdout')
@@ -645,9 +776,9 @@ if __name__ == "__main__":
         setattr(config, k, v)
     config.json = vars(args)
 
-    #main(config)
+    main(config)
 
-    test()
+    #temp()
     #newTest()
     #filtr = tracemalloc.Filter(inclusive=True, filename_pattern='*analyzer.py')
     #snapshot = snapshot.filter_traces([filtr])    

@@ -17,8 +17,8 @@ class config:
     domain = None # the domain name can be either deepzono, refinezono, deeppoly or refinepoly
     dataset = None # the dataset, can be either mnist, cifar10, or acasxu
     complete = False # flag specifying where to use complete verification or not
-    timeout_lp = 100 # timeout for the LP solver
-    timeout_milp = 100 # timeout for the MILP solver
+    timeout_lp = 10 # timeout for the LP solver
+    timeout_milp = 10 # timeout for the MILP solver
     use_area_heuristic = True # whether to use area heuristic for the DeepPoly ReLU approximation
     mean = None # the mean used to normalize the data with
     std = None # the standard deviation used to normalize the data with
@@ -38,8 +38,9 @@ class config:
     x_input_dataset = None
     y_input_dataset = None
     output = None
-    sparse_n = 100
+    sparse_n = 10
     numproc = multiprocessing.cpu_count() # number of processes for milp/lp/krelu
-    refine_neurons = False # refine neurons
+    refine_neurons = True # refine neurons
+    strategy = 'grad_and_scale'
     start = 0
     end = 100
