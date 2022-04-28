@@ -20,8 +20,8 @@ from ctypes.util import *
 from layers import *
 from poly import *
 
-#debug_mode = False
-debug_mode = True
+debug_mode = False
+#debug_mode = True
 
 libc = CDLL(find_library('c'))
 printf = libc.printf
@@ -307,7 +307,7 @@ def poly_split(man, element, ir_list, nn, k, split_dims, split_values=None, meet
 
         linexprs = create_k_lincons_array(k, [last_neuron+i for i in split_dims], split_values)
         lincons0_array = elina_lincons0_array_make(k)
-        
+    
     for i in range(total_size):
         new_e, new_nn = poly_copy(man, ir_list, nn.calc_layerno(), nn, False)
         for j in range(k):

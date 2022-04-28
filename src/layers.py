@@ -1,7 +1,7 @@
 '''
 @author: LI Jiaying
 '''
-
+import copy
 class Layers:
 
     def __init__(self, specLB, specUB):
@@ -34,10 +34,10 @@ class Layers:
         self.last_layer = None
     
     def copy(self, layers:'Layers') -> None:
-        self.layertypes = layers.layertypes.copy()
-        self.weights = layers.weights.copy()
-        self.biases = layers.biases.copy()
-        self.filters = layers.filters.copy()
+        self.layertypes = copy.deepcopy(layers.layertypes)
+        self.weights = copy.deepcopy(layers.weights)
+        self.biases = copy.deepcopy(layers.biases)
+        self.filters = copy.deepcopy(layers.filters)
         self.numfilters = layers.numfilters.copy()
         self.filter_size = layers.filter_size.copy()
         self.input_shape = layers.input_shape.copy()
@@ -53,13 +53,13 @@ class Layers:
         self.concat_counter = 0
         self.tile_counter = 0
         self.activation_counter = 0
-        self.specLB = layers.specLB.copy()
-        self.specUB = layers.specUB.copy()
+        self.specLB = copy.deepcopy(layers.specLB)
+        self.specUB = copy.deepcopy(layers.specUB)
         self.original = layers.original.copy()
         self.zonotope = layers.zonotope.copy()
-        self.predecessors = layers.predecessors.copy()
-        self.in_LB = layers.in_LB.copy()
-        self.in_UB = layers.in_UB.copy()
+        self.predecessors = copy.deepcopy(layers.predecessors)
+        self.in_LB = copy.deepcopy(layers.in_LB)
+        self.in_UB = copy.deepcopy(layers.in_UB)
         self.last_layer = layers.last_layer   
 
 

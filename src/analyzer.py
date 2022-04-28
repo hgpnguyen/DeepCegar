@@ -382,7 +382,7 @@ class Analyzer:
                     return None
             i+=1
         
-        counter, var_list, model = create_model(nn, nn.in_LB, nn.in_UB, nn.specLB, nn.specUB, self.relu_groups, nn.numlayer, config.complete==True)
+        #counter, var_list, model = create_model(nn, nn.in_LB, nn.in_UB, nn.specLB, nn.specUB, self.relu_groups, nn.numlayer, config.complete==True)
         cprint(back_blue, taskhid.ljust(label_len+(2*i), '┈'), ' data @', i-1, ' ⟿ ⟿  Compare ⟿ ⟿  ', reset, sep='', end='')
         dominant_class = -1
         label_failed = []
@@ -461,15 +461,15 @@ class Analyzer:
             sys.exit(0)
         
         layer_no=1
-        #if self.use_abstract_attack: # this is a shortcut for early termination
-        #    attack_result = self.attack_abstract_domain(layer_no, element)
+        if self.use_abstract_attack: # this is a shortcut for early termination
+            attack_result = self.attack_abstract_domain(layer_no, element)
             #print("Debug")
             #debug_info_print(self.man, element, self.domain, 0)
-        #    if attack_result.success:
+            if attack_result.success:
                 #dominant_class, nb = self.concrete_executor.forward(attack_result.x)
                 #print("Dominent class", dominant_class, check_in_bound(attack_result.x, [specLB, specUB]))
-        #       print('Counterexample found for the input layer, and thus the property does not hold. This task fails.')
-        #        return Verified_Result.UnSafe
+                print('Counterexample found for the input layer, and thus the property does not hold. This task fails.')
+                return Verified_Result.UnSafe
         
         self.task_manager.add_task(layer_no, element, self.nn, '', '◈', set(), self.relu_groups)
                 

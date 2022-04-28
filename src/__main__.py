@@ -667,6 +667,7 @@ def run_temp(config, eran, tests, eps_limit):
 
     
     start = config.start
+    config.end = min(config.end, 100)
     for i, test in enumerate(tests[start:config.end], start):
         output = [i, -1, -1, [], []]
         if(dataset=='mnist') and not config.x_input_dataset:
@@ -723,7 +724,7 @@ def temp():
     #config.end = 26
     #config.use_abstract_attack = False
     #config.use_abstract_refine = False
-    for m in mnist_relu_model[:1]:
+    for m in mnist_relu_model[config.test_start:config.test_end]:
         model_name = 'mnist_relu_' + m
         config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
         filename = '../experiment/raw/refinepoly_test/refinepoly_test_{}.csv'.format(model_name)
@@ -737,6 +738,7 @@ def temp():
         eran = getERAN(config.netname, config.dataset)
         run_temp(config, eran, tests, eps_limit)
         tf.reset_default_graph()
+        config.start = 0
     
 
 
@@ -765,6 +767,8 @@ if __name__ == "__main__":
     parser.add_argument('--output', type=str, default=config.output, help='Output folder')
     parser.add_argument('--start', type=int, default=0, help='Start testcase')
     parser.add_argument('--end', type=int, default=100, help='End testcase')
+    parser.add_argument('--test_start', type=int, default=0, help='Start file test')
+    parser.add_argument('--test_end', type=int, default=1, help='End file test')
 
 
     # Logging options
@@ -776,9 +780,9 @@ if __name__ == "__main__":
         setattr(config, k, v)
     config.json = vars(args)
 
-    main(config)
+    #main(config)
 
-    #temp()
+    temp()
     #newTest()
     #filtr = tracemalloc.Filter(inclusive=True, filename_pattern='*analyzer.py')
     #snapshot = snapshot.filter_traces([filtr])    

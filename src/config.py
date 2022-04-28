@@ -44,3 +44,5 @@ class config:
     strategy = 'grad_and_scale'
     start = 0
     end = 100
+    test_start = 0
+    test_end = 15
