@@ -700,10 +700,10 @@ def run_temp(config, eran, tests, eps_limit):
         data = (i, image, target_label, means, stds, is_trained_with_pytorch)
         config.use_abstract_attack = True
         config.use_abstract_refine = True
-        config.strategy = 'causality'
-        config.epsilon = eps_limit[i]
+        config.strategy = 'grad_and_scale'
+        config.epsilon = eps_limit[i] if eps_limit[i] >= 0 else 0.0
         output[1] = eps_limit[i]
-        deeppoly_out = find_limit(config, eran, data, 0.004)
+        deeppoly_out = find_limit(config, eran, data, 0.001)
         output[2] = deeppoly_out[1] if deeppoly_out[1] != -1 else eps_limit[i]
         output[4] = deeppoly_out[2]
         output.append(deeppoly_out[-1])
@@ -729,7 +729,7 @@ def temp():
         config.netname = '{f}{model}/original/{model}.tf'.format(f=model_folder, model=model_name)
         filename = '../experiment/raw/refinepoly_test/refinepoly_test_{}.csv'.format(model_name)
         eps_limit = get_eps_limit(filename)
-        config.output =  '{}/refine_causal_test_{}.csv'.format(output_folder, model_name)
+        config.output =  '{}/refine_gradient_test_{}.csv'.format(output_folder, model_name)
         if config.dataset:
             if not config.x_input_dataset:
                 tests = get_tests(config.dataset, config.geometric)

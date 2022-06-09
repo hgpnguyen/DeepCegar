@@ -26,6 +26,7 @@ from copy import *
 from enum import Enum
 from ai_milp import milp_callback, create_model
 from gurobipy import *
+import time
 
 only_split_not_add_new_task = False
 split_check_time = 0
@@ -433,6 +434,7 @@ class Analyzer:
         prefix_len = len(self.ir_list)+4 if len(self.ir_list)>20 else 20
         cprint(back_blue, root.ljust(label_len, '┈'), ' input ⟿ ⟿  Abstract ⟿ ⟿  data @0', reset, sep='')
         element = self.ir_list[0].transformer(self.man)
+        start = time.time()
         global split_check_time
         if (split_check_time>0):
             for i in range(split_check_time): # check the domain splitter
@@ -484,7 +486,7 @@ class Analyzer:
             print(bold, '<', taskid, '> ---> analyzing....', reset, ' ', self.task_manager, sep='')
             # print(lgreen, bold, '<', taskid, '> ---> on analyzing task ', this_task, reset, '  {remaining ', self.task_manager, '}', sep='')
             status = self.analyze_task(this_task, False)
-            if not status and self.use_abstract_attack and self.task_manager.size() < 450 and self.task_manager.cid < 5000:
+            if not status and self.use_abstract_attack and self.task_manager.size() < 450 and self.task_manager.cid < 4000 and time.time()-start < 1200:
                 print(lgreen, bold, "\nFailed. Starting to attack and refine. \n", nonbold, reset)
                 timeout_lp, timeout_milp = config.timeout_lp, config.timeout_milp
                 config.timeout_lp, config.timeout_milp = 1, 1
